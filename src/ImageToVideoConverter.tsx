@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
+import logo_img from '/assets/logo.png';
 
 interface ImageFile {
   id: string;
@@ -261,7 +262,7 @@ export function ImageToVideoConverter() {
     <div className="space-y-6">
       <div className="main-logo">
         <img
-          src="/assets/logo.png"
+          src={logo_img}
           alt="Stills-2-Video Logo"
           className="mx-auto h-32 w-auto mb-4"
         />
