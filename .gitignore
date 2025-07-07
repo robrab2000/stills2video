@@ -57,44 +57,7 @@ build/Release/ # Compiled binary addons (Node)
 !.vscode/extensions.json
 !.vscode/*.code-snippets
 .history/ # VSCode Local History and general history
-.idea/ # JetBrains IDEs config directory
-.idea/**/workspace.xml
-.idea/**/tasks.xml
-.idea/**/usage.statistics.xml
-.idea/**/dictionaries
-.idea/**/shelf
-.idea/**/aws.xml
-.idea/**/contentModel.xml
-.idea/**/dataSources/
-.idea/**/dataSources.ids
-.idea/**/dataSources.local.xml
-.idea/**/sqlDataSources.xml
-.idea/**/dynamic.xml
-.idea/**/uiDesigner.xml
-.idea/**/dbnavigator.xml
-.idea/**/gradle.xml
-.idea/**/libraries
-.idea/**/mongoSettings.xml
-.idea/**/replstate.xml # Cursive Clojure plugin
-.idea/**/sonarlint/ # SonarLint plugin
-.idea/**/sonarIssues.xml # SonarQube plugin
-.idea/**/markdown-navigator.xml
-.idea/**/markdown-navigator-enh.xml
-.idea/**/markdown-navigator/
-.idea/$CACHE_FILE$ # Cache file creation bug
-.idea/codestream.xml # CodeStream plugin
-.idea/**/azureSettings.xml # Azure Toolkit
-.idea/httpRequests # Editor-based Rest Client
-.idea/caches/build_file_checksums.ser # Android studio 3.1+
-
-# Files that will be recreated (uncomment if using auto-import with Maven/Gradle)
-# .idea/artifacts
-# .idea/compiler.xml
-# .idea/jarRepositories.xml
-# .idea/modules.xml
-# .idea/*.iml
-# .idea/modules
-# *.iml
+.idea/
 
 # Other Editor/IDE related
 .DS_Store # macOS specific, often appears in IDEs
