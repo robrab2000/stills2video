@@ -268,8 +268,8 @@ export function ImageToVideoConverter() {
         />
         </div>
       <div className="text-center">
-        <h1 className="text-xl font-bold text-gray-400 mb-2">A Simple Image Sequence to Video Converter</h1>
-        <p className="text-gray-600">Drop images, arrange them, and export as video</p>
+        <h1 className="text-2xl font-bold text-gray-400 mb-2">A Simple Image Sequence to Video Converter</h1>
+        <p className="text-gray-600 text-sm md:text-base">Drop images, arrange them, and export as video</p>
       </div>
 
       {/* Upload Area */}
