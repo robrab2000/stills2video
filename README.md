@@ -3,11 +3,15 @@
 
 ![stills2video app screenshot showing image drag and drop functionality](assets/logo.png)
 
+## Overview
 Stills-2-Video is a simple, client-side web application for turning your still images into a video, right in your browser! No uploads to a server, no external services.
 
 I built this because i was getting sick of messing around with ffmpeg or fire up something heavy like Premiere Pro or Final Cut Pro everytime I needed to create a video from a sequence of images.
 
 **Disclaimer:** This project is very much a **work-in-progress** and was built with a fair bit of **vibe coding** and experimental exploration. Functionality is pretty limited, but the core idea is there! 
+
+## Try it out!
+You can try out the app live at [www.stills2video.com](https://stills2video.com). Just drag and drop your images into the app, and it will generate a video for you in WebM format.
 
 ## ✨ Features (Current & Planned)
 
