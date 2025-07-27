@@ -27,6 +27,48 @@ You can try out the app live at [www.stills2video.com](https://stills2video.com)
 *   **More Export Options:** Control over frame rate, resolution, and perhaps even alternative video formats (if browser support allows or with a heavy-duty WASM solution).
 *   **User Interface Refinements:** Making the experience a little less bad.
 
+## 🧪 Testing
+
+This project includes a comprehensive test suite to ensure functionality works correctly and to help with future migrations (like converting to Next.js).
+
+### Test Categories:
+
+- **Unit Tests**: Core utility functions (`src/lib/imageUtils.ts`)
+- **Component Tests**: React component behavior (`ImageToVideoConverter.tsx`)
+- **Integration Tests**: Complete user workflows
+- **Browser API Tests**: MediaRecorder, Canvas, File API functionality
+
+### Running Tests:
+
+```bash
+# Run all tests
+npm run test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with UI
+npm run test:ui
+
+# Run tests with coverage
+npm run test:coverage
+
+# Run tests once (CI mode)
+npm run test:run
+```
+
+### Test Coverage:
+
+The test suite covers:
+- ✅ File upload and validation
+- ✅ Image sorting and reordering
+- ✅ Video generation settings
+- ✅ Drag and drop functionality
+- ✅ Error handling
+- ✅ Memory management (URL cleanup)
+- ✅ Browser API compatibility
+- ✅ Complete user workflows
+
 ## 🚀 Get Started (For Developers)
 
 This project is built with TypeScript, React, Vite, and styled with Tailwind CSS.
@@ -46,6 +88,11 @@ This project is built with TypeScript, React, Vite, and styled with Tailwind CSS
     ```
     The app should now be running at `http://localhost:5173` (or whatever port Vite chooses).
 
+4.  **Run tests:**
+    ```bash
+    npm run test:run
+    ```
+
 ## 💡 Contribution - Pull Requests Welcome!
 
 As mentioned, this is a "vibe coded" project, and I'm very keen to see how others might want to contribute! If you have ideas, spot bugs, or want to tackle one of the planned features (or suggest new ones!), please don't hesitate to:
@@ -53,9 +100,11 @@ As mentioned, this is a "vibe coded" project, and I'm very keen to see how other
 1.  **Fork the repository.**
 2.  **Create a new branch** (`git checkout -b feature/your-feature-name` or `bugfix/issue-name`).
 3.  **Make your changes.**
-4.  **Commit your changes** (`git commit -m "feat: Add cool new thing"`).
-5.  **Push to your branch** (`git push origin feature/your-feature-name`).
-6.  **Open a Pull Request!**
+4.  **Add tests** for new functionality or bug fixes.
+5.  **Run tests** to ensure everything works: `npm run test:run`
+6.  **Commit your changes** (`git commit -m "feat: Add cool new thing"`).
+7.  **Push to your branch** (`git push origin feature/your-feature-name`).
+8.  **Open a Pull Request!**
 
 All contributions, no matter how small, are greatly appreciated! Let's build something cool together.
 
