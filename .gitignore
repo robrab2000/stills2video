@@ -139,3 +139,6 @@ psd
 thumb
 sketch
 
+
+# Next.js build output
+.next/
