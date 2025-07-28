@@ -26,12 +26,15 @@ export class VideoService {
         // Extract File objects from ImageFile array
         const imageFiles = images.map(img => img.file);
         
-        // Generate video using FFmpeg
+        // Generate video using FFmpeg with progress callback
         const videoBlob = await generateVideoWithFFmpeg(imageFiles, {
           fps: settings.fps,
           width: settings.videoWidth,
           height: settings.videoHeight,
           codec: selectedCodec
+        }, (progress, stage) => {
+          console.log(`FFmpeg progress: ${progress}% - ${stage}`);
+          onProgress?.(progress);
         });
 
         // Create video preview object
@@ -183,6 +186,9 @@ export class VideoService {
   ): Promise<void> {
     const frameDuration = 1000 / settings.fps;
 
+    // Initial progress update
+    onProgress?.(10);
+
     for (let i = 0; i < images.length; i++) {
       const img = new window.Image();
       await new Promise<void>((resolve) => {
@@ -209,13 +215,15 @@ export class VideoService {
         img.src = images[i].url;
       });
 
-      if (onProgress) {
-        const progress = ((i + 1) / images.length) * 100;
-        onProgress(progress);
-      }
+      // Update progress based on frame processing
+      const progress = 10 + ((i + 1) / images.length) * 80; // 10-90% for frame processing
+      onProgress?.(progress);
 
       await new Promise(resolve => setTimeout(resolve, frameDuration));
     }
+
+    // Final progress update
+    onProgress?.(100);
   }
 
   static async createThumbnail(videoBlob: Blob): Promise<string> {

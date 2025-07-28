@@ -35,6 +35,23 @@ export function VideoSettings({
 
   const videoDuration = imagesCount / settings.fps;
 
+  // Determine the current stage based on progress
+  const getCurrentStage = () => {
+    if (generationProgress < 10) return "Initializing...";
+    if (generationProgress < 30) return "Processing images...";
+    if (generationProgress < 70) return "Encoding video...";
+    if (generationProgress < 95) return "Finalizing...";
+    return "Complete!";
+  };
+
+  const getStageIcon = () => {
+    if (generationProgress < 10) return "⚙️";
+    if (generationProgress < 30) return "🖼️";
+    if (generationProgress < 70) return "🎬";
+    if (generationProgress < 95) return "✨";
+    return "✅";
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm border">
       <button
@@ -147,18 +164,51 @@ export function VideoSettings({
             </button>
           </div>
 
-          {/* Progress Indicator */}
+          {/* Enhanced Progress Indicator */}
           {isGenerating && (
-            <div className="mt-4">
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>Generating video...</span>
-                <span>{Math.round(generationProgress)}%</span>
+            <div className="mt-6 p-4 bg-gray-50 rounded-lg border">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-2">
+                  <span className="text-lg">{getStageIcon()}</span>
+                  <span className="font-medium text-gray-800">{getCurrentStage()}</span>
+                </div>
+                <span className="text-sm font-semibold text-green-600">
+                  {Math.round(generationProgress)}%
+                </span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
+              
+              {/* Main Progress Bar */}
+              <div className="w-full bg-gray-200 rounded-full h-3 mb-2 overflow-hidden">
                 <div 
-                  className="bg-green-600 h-2 rounded-full transition-all duration-300 ease-out"
+                  className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all duration-500 ease-out shadow-sm"
                   style={{ width: `${generationProgress}%` }}
                 ></div>
+              </div>
+              
+              {/* Progress Details */}
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Processing {imagesCount} images</span>
+                <span>~{videoDuration.toFixed(1)}s video</span>
+              </div>
+              
+              {/* Stage Indicators */}
+              <div className="mt-3 flex justify-between text-xs">
+                <div className={`flex items-center space-x-1 ${generationProgress >= 10 ? 'text-green-600' : 'text-gray-400'}`}>
+                  <span>⚙️</span>
+                  <span>Init</span>
+                </div>
+                <div className={`flex items-center space-x-1 ${generationProgress >= 30 ? 'text-green-600' : 'text-gray-400'}`}>
+                  <span>🖼️</span>
+                  <span>Images</span>
+                </div>
+                <div className={`flex items-center space-x-1 ${generationProgress >= 70 ? 'text-green-600' : 'text-gray-400'}`}>
+                  <span>🎬</span>
+                  <span>Encode</span>
+                </div>
+                <div className={`flex items-center space-x-1 ${generationProgress >= 95 ? 'text-green-600' : 'text-gray-400'}`}>
+                  <span>✨</span>
+                  <span>Final</span>
+                </div>
               </div>
             </div>
           )}

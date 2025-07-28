@@ -65,7 +65,8 @@ export class FFmpegManager {
       width: number;
       height: number;
       codec: string;
-    }
+    },
+    onProgress?: (progress: number, stage: string) => void
   ): Promise<Blob> {
     if (!this.ffmpeg || !this.isLoaded) {
       await this.load();
@@ -76,10 +77,20 @@ export class FFmpegManager {
     }
 
     try {
+      // Stage 1: Initialization (0-10%)
+      onProgress?.(5, 'Initializing FFmpeg...');
+      
+      // Stage 2: Processing images (10-30%)
+      onProgress?.(10, 'Processing images...');
+      
       // Write image files to FFmpeg
       for (let i = 0; i < imageFiles.length; i++) {
         const imageData = await fetchFile(imageFiles[i]);
         await this.ffmpeg.writeFile(`image_${i.toString().padStart(4, '0')}.jpg`, imageData);
+        
+        // Update progress for image processing
+        const imageProgress = 10 + (i / imageFiles.length) * 20;
+        onProgress?.(imageProgress, `Processing image ${i + 1}/${imageFiles.length}...`);
       }
 
       // Create input file list
@@ -87,6 +98,9 @@ export class FFmpegManager {
         `file 'image_${i.toString().padStart(4, '0')}.jpg'`
       ).join('\n');
       await this.ffmpeg.writeFile('input.txt', inputList);
+
+      // Stage 3: Encoding preparation (30-40%)
+      onProgress?.(30, 'Preparing video encoding...');
 
       // Determine output format and codec
       const isH264 = settings.codec.includes('h264') || settings.codec.includes('avc');
@@ -108,9 +122,21 @@ export class FFmpegManager {
 
       console.log('FFmpeg command:', command.join(' '));
 
+      // Stage 4: Video encoding (40-90%)
+      onProgress?.(40, 'Encoding video...');
+      
       // Execute FFmpeg command
       await this.ffmpeg.exec(command);
+      
+      // Simulate encoding progress (since FFmpeg doesn't provide real-time progress)
+      for (let i = 40; i <= 90; i += 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        onProgress?.(i, 'Encoding video...');
+      }
 
+      // Stage 5: Finalizing (90-100%)
+      onProgress?.(90, 'Finalizing video...');
+      
       // Read the output file
       const data = await this.ffmpeg.readFile(`output.${outputFormat}`);
       
@@ -129,6 +155,7 @@ export class FFmpegManager {
         // Ignore cleanup errors
       }
 
+      onProgress?.(100, 'Video generation complete!');
       return new Blob([data], { type: `video/${outputFormat}` });
     } catch (error) {
       console.error('FFmpeg error:', error);
@@ -263,7 +290,8 @@ export async function generateVideoWithFFmpeg(
     width: number;
     height: number;
     codec: string;
-  }
+  },
+  onProgress?: (progress: number, stage: string) => void
 ): Promise<Blob> {
-  return await ffmpegManager.generateVideoFromImages(imageFiles, settings);
+  return await ffmpegManager.generateVideoFromImages(imageFiles, settings, onProgress);
 }

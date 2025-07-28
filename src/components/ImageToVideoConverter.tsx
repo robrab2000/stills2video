@@ -59,6 +59,9 @@ export function ImageToVideoConverter() {
   // Event handlers
   const handleGenerateVideo = useCallback(async () => {
     try {
+      // Set generating state to true and reset progress
+      dispatch({ type: 'SET_UI_STATE', payload: { isGenerating: true, generationProgress: 0 } });
+      
       const video = await VideoService.generateVideo(
         state.images,
         state.settings,
