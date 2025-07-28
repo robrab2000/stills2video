@@ -26,6 +26,10 @@ interface VideoPreview {
   url: string;
   blob: Blob;
   extension: string;
+  id: string;
+  timestamp: number;
+  name: string;
+  thumbnailUrl?: string;
 }
 
 export function ImageToVideoConverter() {
@@ -41,6 +45,16 @@ export function ImageToVideoConverter() {
   const [videoCodecs, setVideoCodecs] = useState<VideoCodec[]>([]);
   const [videoPreview, setVideoPreview] = useState<VideoPreview | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [generatedVideos, setGeneratedVideos] = useState<VideoPreview[]>([]);
+  const [collapsedPanels, setCollapsedPanels] = useState<{
+    settings: boolean;
+    generatedVideos: boolean;
+    images: boolean;
+  }>({
+    settings: false,
+    generatedVideos: false,
+    images: false
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -171,9 +185,63 @@ export function ImageToVideoConverter() {
   const downloadVideo = useCallback((videoPreview: VideoPreview) => {
     const a = document.createElement("a");
     a.href = videoPreview.url;
-    a.download = `images-video-${Date.now()}.${videoPreview.extension}`;
+    a.download = videoPreview.name;
     a.click();
     toast.success("Video downloaded successfully!");
+  }, []);
+
+  const previewVideo = useCallback((video: VideoPreview) => {
+    setVideoPreview(video);
+    setShowPreview(true);
+  }, []);
+
+  const removeGeneratedVideo = useCallback((videoId: string) => {
+    setGeneratedVideos(prev => {
+      const videoToRemove = prev.find(v => v.id === videoId);
+      if (videoToRemove) {
+        URL.revokeObjectURL(videoToRemove.url);
+      }
+      return prev.filter(v => v.id !== videoId);
+    });
+    toast.success("Video removed from list");
+  }, []);
+
+  const createVideoThumbnail = useCallback(async (videoBlob: Blob): Promise<string> => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      video.muted = true;
+      video.crossOrigin = 'anonymous';
+      
+      video.onloadeddata = () => {
+        // Seek to the first frame
+        video.currentTime = 0;
+      };
+      
+      video.onseeked = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 120;
+        canvas.height = 80;
+        const ctx = canvas.getContext('2d')!;
+        
+        // Draw the first frame
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Convert to data URL
+        const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.8);
+        resolve(thumbnailUrl);
+        
+        // Clean up
+        URL.revokeObjectURL(video.src);
+      };
+      
+      video.onerror = () => {
+        // Fallback to default thumbnail if video loading fails
+        resolve('');
+        URL.revokeObjectURL(video.src);
+      };
+      
+      video.src = URL.createObjectURL(videoBlob);
+    });
   }, []);
 
   const generateVideo = async () => {
@@ -212,17 +280,30 @@ export function ImageToVideoConverter() {
         }
       };
 
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         const blob = new Blob(chunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
         const selectedCodecInfo = videoCodecs.find(codec => codec.mimeType === mimeType);
         const extension = selectedCodecInfo?.extension || (mimeType.includes("mp4") ? "mp4" : "webm");
+        const videoId = Math.random().toString(36).substr(2, 9);
+        const timestamp = Date.now();
+        const videoName = `images-video-${timestamp}.${extension}`;
         
-        setVideoPreview({
+        // Create thumbnail from the first frame
+        const thumbnailUrl = await createVideoThumbnail(blob);
+        
+        const newVideo: VideoPreview = {
           url,
           blob,
-          extension
-        });
+          extension,
+          id: videoId,
+          timestamp,
+          name: videoName,
+          thumbnailUrl
+        };
+        
+        setVideoPreview(newVideo);
+        setGeneratedVideos(prev => [newVideo, ...prev]); // Add to beginning of list
         setShowPreview(true);
         setIsGenerating(false);
         setGenerationProgress(100);
@@ -292,11 +373,15 @@ export function ImageToVideoConverter() {
 
   const closePreview = useCallback(() => {
     setShowPreview(false);
-    if (videoPreview) {
-      URL.revokeObjectURL(videoPreview.url);
-      setVideoPreview(null);
-    }
-  }, [videoPreview]);
+    setVideoPreview(null);
+  }, []);
+
+  const togglePanel = useCallback((panel: keyof typeof collapsedPanels) => {
+    setCollapsedPanels(prev => ({
+      ...prev,
+      [panel]: !prev[panel]
+    }));
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -345,118 +430,211 @@ export function ImageToVideoConverter() {
 
       {/* Controls */}
       {images.length > 0 && (
-        <div className="bg-white rounded-lg p-6 shadow-sm border">
-          <h3 className="text-lg font-semibold mb-4">Settings</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sort Order
-              </label>
-              <select
-                value={sortOption}
-                onChange={(e) => setSortOption(e.target.value as SortOption)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="manual">Manual (drag to reorder)</option>
-                <option value="name">Alphabetical</option>
-                <option value="date">Date Modified</option>
-                <option value="size">File Size</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Video Codec
-              </label>
-              <select
-                value={selectedCodec}
-                onChange={(e) => setSelectedCodec(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {videoCodecs.map((codec) => (
-                  <option
-                    key={codec.mimeType}
-                    value={codec.mimeType}
-                    disabled={!codec.supported}
-                    className={!codec.supported ? "text-gray-400" : ""}
-                  >
-                    {codec.name} {!codec.supported ? "(Not Supported)" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Frames Per Second (FPS)
-              </label>
-              <input
-                type="number"
-                value={fps}
-                onChange={(e) => setFps(Number(e.target.value))}
-                min="0.1"
-                max="30"
-                step="0.1"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Video Width
-              </label>
-              <input
-                type="number"
-                value={videoWidth}
-                onChange={(e) => setVideoWidth(Number(e.target.value))}
-                min="480"
-                max="3840"
-                step="16"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Video Height
-              </label>
-              <input
-                type="number"
-                value={videoHeight}
-                onChange={(e) => setVideoHeight(Number(e.target.value))}
-                min="360"
-                max="2160"
-                step="16"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
+        <div className="bg-white rounded-lg shadow-sm border">
+          <button
+            onClick={() => togglePanel('settings')}
+            className="w-full p-4 flex items-center hover:bg-gray-50 transition-colors"
+          >
+            <span className="text-gray-400 text-xs mr-2">
+              {collapsedPanels.settings ? '▶' : '▼'}
+            </span>
+            <h3 className="text-lg font-semibold">Generate Video</h3>
+          </button>
           
-          <div className="mt-4 flex justify-between items-center">
-            <div className="text-sm text-gray-600">
-              {images.length} images • Video duration: ~{(images.length / fps).toFixed(1)}s at {fps} FPS
+          {!collapsedPanels.settings && (
+            <div className="px-6 pb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Sort Order
+                  </label>
+                  <select
+                    value={sortOption}
+                    onChange={(e) => setSortOption(e.target.value as SortOption)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="manual">Manual (drag to reorder)</option>
+                    <option value="name">Alphabetical</option>
+                    <option value="date">Date Modified</option>
+                    <option value="size">File Size</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Video Codec
+                  </label>
+                  <select
+                    value={selectedCodec}
+                    onChange={(e) => setSelectedCodec(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {videoCodecs.map((codec) => (
+                      <option
+                        key={codec.mimeType}
+                        value={codec.mimeType}
+                        disabled={!codec.supported}
+                        className={!codec.supported ? "text-gray-400" : ""}
+                      >
+                        {codec.name} {!codec.supported ? "(Not Supported)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Frames Per Second (FPS)
+                  </label>
+                  <input
+                    type="number"
+                    value={fps}
+                    onChange={(e) => setFps(Number(e.target.value))}
+                    min="0.1"
+                    max="30"
+                    step="0.1"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Video Width
+                  </label>
+                  <input
+                    type="number"
+                    value={videoWidth}
+                    onChange={(e) => setVideoWidth(Number(e.target.value))}
+                    min="480"
+                    max="3840"
+                    step="16"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Video Height
+                  </label>
+                  <input
+                    type="number"
+                    value={videoHeight}
+                    onChange={(e) => setVideoHeight(Number(e.target.value))}
+                    min="360"
+                    max="2160"
+                    step="16"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              
+              <div className="mt-4 flex justify-between items-center">
+                <div className="text-sm text-gray-600">
+                  {images.length} images • Video duration: ~{(images.length / fps).toFixed(1)}s at {fps} FPS
+                </div>
+                <button
+                  onClick={generateVideo}
+                  disabled={isGenerating || images.length === 0}
+                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isGenerating ? "Generating..." : "Generate Video"}
+                </button>
+              </div>
+
+              {/* Progress Indicator */}
+              {isGenerating && (
+                <div className="mt-4">
+                  <div className="flex justify-between text-sm text-gray-600 mb-2">
+                    <span>Generating video...</span>
+                    <span>{Math.round(generationProgress)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="bg-green-600 h-2 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${generationProgress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Generated Videos List */}
+      {generatedVideos.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border">
+          <div className="flex justify-between items-center p-4 hover:bg-gray-50 transition-colors">
             <button
-              onClick={generateVideo}
-              disabled={isGenerating || images.length === 0}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              onClick={() => togglePanel('generatedVideos')}
+              className="flex items-center hover:bg-gray-100 rounded px-2 py-1 transition-colors"
             >
-              {isGenerating ? "Generating..." : "Generate Video"}
+              <span className="text-gray-400 text-xs mr-2">
+                {collapsedPanels.generatedVideos ? '▶' : '▼'}
+              </span>
+              <h3 className="text-lg font-semibold">Generated Videos ({generatedVideos.length})</h3>
+            </button>
+            <button
+              onClick={() => {
+                generatedVideos.forEach(video => URL.revokeObjectURL(video.url));
+                setGeneratedVideos([]);
+              }}
+              className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+            >
+              Clear All
             </button>
           </div>
-
-          {/* Progress Indicator */}
-          {isGenerating && (
-            <div className="mt-4">
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>Generating video...</span>
-                <span>{Math.round(generationProgress)}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-green-600 h-2 rounded-full transition-all duration-300 ease-out"
-                  style={{ width: `${generationProgress}%` }}
-                ></div>
+          
+          {!collapsedPanels.generatedVideos && (
+            <div className="px-6 pb-6">
+              <div className="space-y-3">
+                {generatedVideos.map((video) => (
+                  <div
+                    key={video.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="w-16 h-10 bg-gray-200 rounded flex items-center justify-center overflow-hidden">
+                        {video.thumbnailUrl ? (
+                          <img
+                            src={video.thumbnailUrl}
+                            alt="Video thumbnail"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs text-gray-600">🎬</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-medium text-sm">{video.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(video.timestamp).toLocaleTimeString()} • {video.extension.toUpperCase()}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => previewVideo(video)}
+                        className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                      >
+                        Preview
+                      </button>
+                      <button
+                        onClick={() => downloadVideo(video)}
+                        className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors"
+                      >
+                        Download
+                      </button>
+                      <button
+                        onClick={() => removeGeneratedVideo(video.id)}
+                        className="px-2 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -465,9 +643,17 @@ export function ImageToVideoConverter() {
 
       {/* Image Grid */}
       {images.length > 0 && (
-        <div className="bg-white rounded-lg p-6 shadow-sm border">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold">Images ({images.length})</h3>
+        <div className="bg-white rounded-lg shadow-sm border">
+          <div className="flex justify-between items-center p-4 hover:bg-gray-50 transition-colors">
+            <button
+              onClick={() => togglePanel('images')}
+              className="flex items-center hover:bg-gray-100 rounded px-2 py-1 transition-colors"
+            >
+              <span className="text-gray-400 text-xs mr-2">
+                {collapsedPanels.images ? '▶' : '▼'}
+              </span>
+              <h3 className="text-lg font-semibold">Images ({images.length})</h3>
+            </button>
             <button
               onClick={() => {
                 images.forEach(img => URL.revokeObjectURL(img.url));
@@ -479,44 +665,48 @@ export function ImageToVideoConverter() {
             </button>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {images.map((image, index) => (
-              <div
-                key={image.id}
-                draggable={sortOption === "manual"}
-                onDragStart={() => handleDragStart(index)}
-                onDragEnd={handleDragEnd}
-                onDragOver={(e) => handleDragOverItem(e, index)}
-                className={`relative group border-2 rounded-lg overflow-hidden ${
-                  sortOption === "manual" ? "cursor-move" : ""
-                } ${draggedIndex === index ? "opacity-50" : ""} hover:border-blue-300 transition-colors`}
-              >
-                <div className="aspect-square">
-                  <img
-                    src={image.url}
-                    alt={image.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                
-                <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
-                  {index + 1}
-                </div>
-                
-                <button
-                  onClick={() => removeImage(image.id)}
-                  className="absolute top-2 right-2 bg-red-600 text-white w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
-                >
-                  ×
-                </button>
-                
-                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-xs p-2">
-                  <div className="truncate">{image.name}</div>
-                  <div>{(image.size / 1024).toFixed(1)} KB</div>
-                </div>
+          {!collapsedPanels.images && (
+            <div className="px-6 pb-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {images.map((image, index) => (
+                  <div
+                    key={image.id}
+                    draggable={sortOption === "manual"}
+                    onDragStart={() => handleDragStart(index)}
+                    onDragEnd={handleDragEnd}
+                    onDragOver={(e) => handleDragOverItem(e, index)}
+                    className={`relative group border-2 rounded-lg overflow-hidden ${
+                      sortOption === "manual" ? "cursor-move" : ""
+                    } ${draggedIndex === index ? "opacity-50" : ""} hover:border-blue-300 transition-colors`}
+                  >
+                    <div className="aspect-square">
+                      <img
+                        src={image.url}
+                        alt={image.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    
+                    <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+                      {index + 1}
+                    </div>
+                    
+                    <button
+                      onClick={() => removeImage(image.id)}
+                      className="absolute top-2 right-2 bg-red-600 text-white w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
+                    >
+                      ×
+                    </button>
+                    
+                    <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-xs p-2">
+                      <div className="truncate">{image.name}</div>
+                      <div>{(image.size / 1024).toFixed(1)} KB</div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
