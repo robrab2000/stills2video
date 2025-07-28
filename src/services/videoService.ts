@@ -1,7 +1,15 @@
 import { ImageFile, VideoPreview, VideoSettings } from '../types';
 import { calculateImageScaling } from '../lib/imageUtils';
 import { CodecService } from './codecService';
+import { FileService } from './fileService';
 import { generateVideoWithFFmpeg, ffmpegManager } from '../lib/ffmpegUtils';
+
+export interface VideoGenerationResult {
+  success: boolean;
+  video?: VideoPreview;
+  error?: string;
+  warnings?: string[];
+}
 
 export class VideoService {
   static async generateVideo(
@@ -11,6 +19,12 @@ export class VideoService {
     videoCodecs: any[],
     onProgress?: (progress: number) => void
   ): Promise<VideoPreview> {
+    // Validate inputs
+    const validation = this.validateVideoGenerationInputs(images, settings, selectedCodec, videoCodecs);
+    if (!validation.isValid) {
+      throw new Error(`Video generation validation failed: ${validation.errors.join(', ')}`);
+    }
+
     if (images.length === 0) {
       throw new Error("No images provided");
     }
@@ -43,7 +57,7 @@ export class VideoService {
         const extension = selectedCodecInfo?.extension || (selectedCodec.includes("mp4") ? "mp4" : "webm");
         const videoId = Math.random().toString(36).substr(2, 9);
         const timestamp = Date.now();
-        const videoName = `images-video-${timestamp}.${extension}`;
+        const videoName = FileService.generateUniqueFileName('video', extension);
         
         // Create thumbnail using FFmpeg
         const thumbnailUrl = await this.createThumbnail(videoBlob);
@@ -69,6 +83,41 @@ export class VideoService {
     
     // Fallback to MediaRecorder
     return await this.generateVideoWithMediaRecorder(images, settings, selectedCodec, videoCodecs, onProgress);
+  }
+
+  private static validateVideoGenerationInputs(
+    images: ImageFile[],
+    settings: VideoSettings,
+    selectedCodec: string,
+    videoCodecs: any[]
+  ): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    // Validate images
+    if (images.length === 0) {
+      errors.push("At least one image is required");
+    }
+
+    if (images.length > 1000) {
+      errors.push("Maximum 1000 images allowed");
+    }
+
+    // Validate settings
+    const settingsValidation = FileService.validateVideoSettings(settings);
+    if (!settingsValidation.isValid) {
+      errors.push(...settingsValidation.errors);
+    }
+
+    // Validate codec
+    const codecValidation = CodecService.validateCodec(selectedCodec, videoCodecs);
+    if (!codecValidation.isValid) {
+      errors.push(...codecValidation.errors);
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
   }
 
   private static async generateVideoWithMediaRecorder(
@@ -140,7 +189,7 @@ export class VideoService {
           const extension = codecToUse?.extension || (mimeType.includes("mp4") ? "mp4" : "webm");
           const videoId = Math.random().toString(36).substr(2, 9);
           const timestamp = Date.now();
-          const videoName = `images-video-${timestamp}.${extension}`;
+          const videoName = FileService.generateUniqueFileName('video', extension);
           
           const thumbnailUrl = await this.createThumbnail(blob);
           
@@ -268,5 +317,38 @@ export class VideoService {
       
       video.src = URL.createObjectURL(videoBlob);
     });
+  }
+
+  static estimateVideoDuration(imageCount: number, fps: number): number {
+    return imageCount / fps;
+  }
+
+  static estimateVideoSize(
+    imageCount: number,
+    fps: number,
+    width: number,
+    height: number,
+    codec: string
+  ): number {
+    return FileService.estimateVideoSize(imageCount, fps, width, height, codec);
+  }
+
+  static getVideoInfo(video: VideoPreview): {
+    duration: number;
+    size: string;
+    format: string;
+    quality: string;
+  } {
+    const duration = this.estimateVideoDuration(video.blob.size / 1024, 30); // Rough estimate
+    const size = FileService.formatFileSize(video.blob.size);
+    const format = video.extension.toUpperCase();
+    const quality = CodecService.getCodecQuality(video.extension === 'mp4' ? 'h264' : 'vp8');
+
+    return {
+      duration,
+      size,
+      format,
+      quality
+    };
   }
 }

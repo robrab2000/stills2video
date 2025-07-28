@@ -1,6 +1,12 @@
 import { VideoCodec } from '../types';
 import { getAvailableVideoCodecs, getFirstSupportedCodec } from '../lib/imageUtils';
 
+export interface CodecValidationResult {
+  isValid: boolean;
+  errors: string[];
+  recommendedCodec?: VideoCodec;
+}
+
 export class CodecService {
   static getAvailableCodecs(): VideoCodec[] {
     if (typeof window === "undefined" || typeof MediaRecorder === "undefined") {
@@ -56,5 +62,107 @@ export class CodecService {
     if (vp8) return vp8;
 
     return this.getFallbackCodec(codecs);
+  }
+
+  static validateCodec(mimeType: string, codecs: VideoCodec[]): CodecValidationResult {
+    const errors: string[] = [];
+    
+    if (!mimeType) {
+      errors.push("Codec must be selected");
+      return {
+        isValid: false,
+        errors,
+        recommendedCodec: this.getBestCodec(codecs)
+      };
+    }
+
+    const codecInfo = this.getCodecInfo(mimeType, codecs);
+    
+    if (!codecInfo) {
+      errors.push("Selected codec not found");
+      return {
+        isValid: false,
+        errors,
+        recommendedCodec: this.getBestCodec(codecs)
+      };
+    }
+
+    if (!codecInfo.supported) {
+      errors.push(`Codec ${codecInfo.name} is not supported in this browser`);
+      return {
+        isValid: false,
+        errors,
+        recommendedCodec: this.getBestCodec(codecs)
+      };
+    }
+
+    return {
+      isValid: true,
+      errors: []
+    };
+  }
+
+  static getCodecQuality(mimeType: string): 'high' | 'medium' | 'low' {
+    if (mimeType.includes('h264') || mimeType.includes('avc')) {
+      return 'high';
+    } else if (mimeType.includes('vp9')) {
+      return 'high';
+    } else if (mimeType.includes('vp8')) {
+      return 'medium';
+    }
+    return 'low';
+  }
+
+  static getCodecCompatibility(mimeType: string): {
+    chrome: boolean;
+    firefox: boolean;
+    safari: boolean;
+    edge: boolean;
+  } {
+    const isH264 = mimeType.includes('h264') || mimeType.includes('avc');
+    const isVP9 = mimeType.includes('vp9');
+    const isVP8 = mimeType.includes('vp8');
+
+    return {
+      chrome: isH264 || isVP9 || isVP8,
+      firefox: isVP9 || isVP8, // Limited H.264 support in MediaRecorder
+      safari: isH264, // Limited WebM support
+      edge: isH264 || isVP9 || isVP8
+    };
+  }
+
+  static getRecommendedCodecForBrowser(): string {
+    const userAgent = navigator.userAgent.toLowerCase();
+    
+    if (userAgent.includes('safari') && !userAgent.includes('chrome')) {
+      // Safari prefers H.264
+      return "video/mp4;codecs=h264";
+    } else if (userAgent.includes('firefox')) {
+      // Firefox prefers WebM
+      return "video/webm;codecs=vp9";
+    } else {
+      // Chrome/Edge can handle both well
+      return "video/mp4;codecs=h264";
+    }
+  }
+
+  static getCodecDescription(mimeType: string): string {
+    if (mimeType.includes('h264') || mimeType.includes('avc')) {
+      return "H.264 (AVC) - High quality, widely compatible, good compression";
+    } else if (mimeType.includes('vp9')) {
+      return "VP9 - High quality, good compression, modern browsers";
+    } else if (mimeType.includes('vp8')) {
+      return "VP8 - Good quality, broad compatibility, moderate compression";
+    }
+    return "Unknown codec";
+  }
+
+  static getCodecFileExtension(mimeType: string): string {
+    if (mimeType.includes('mp4') || mimeType.includes('h264') || mimeType.includes('avc')) {
+      return 'mp4';
+    } else if (mimeType.includes('webm')) {
+      return 'webm';
+    }
+    return 'mp4'; // Default fallback
   }
 }

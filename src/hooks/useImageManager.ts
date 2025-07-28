@@ -1,7 +1,8 @@
-import { useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { ImageFile, SortOption } from '../types';
 import { FileService } from '../services/fileService';
+import { sortImages } from '../lib/imageUtils';
 
 export function useImageManager(
   images: ImageFile[],
@@ -10,76 +11,79 @@ export function useImageManager(
   onSortOptionChange: (option: SortOption) => void
 ) {
   const handleFileSelect = useCallback((files: FileList) => {
-    const newImages = FileService.processFileList(files);
-
-    if (newImages.length > 0) {
-      const updatedImages = [...images, ...newImages];
+    const result = FileService.processFileList(files);
+    
+    if (result.images.length > 0) {
+      const updatedImages = [...images, ...result.images];
       onImagesChange(updatedImages);
-      toast.success(`Added ${newImages.length} images`);
+      toast.success(`Added ${result.images.length} images`);
+    }
+    
+    if (result.errors.length > 0) {
+      result.errors.forEach(error => {
+        toast.error(error);
+      });
     }
   }, [images, onImagesChange]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const files = e.dataTransfer.files;
-    handleFileSelect(files);
+    if (files.length > 0) {
+      handleFileSelect(files);
+    }
   }, [handleFileSelect]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
   }, []);
 
-  const removeImage = useCallback((id: string) => {
-    const imageToRemove = images.find(img => img.id === id);
-    if (imageToRemove) {
-      URL.revokeObjectURL(imageToRemove.url);
-    }
-    
+  const handleRemoveImage = useCallback((id: string) => {
     const updatedImages = images.filter(img => img.id !== id);
     onImagesChange(updatedImages);
+    toast.success("Image removed");
   }, [images, onImagesChange]);
 
-  const clearAllImages = useCallback(() => {
+  const handleClearAllImages = useCallback(() => {
     FileService.cleanupImageUrls(images);
     onImagesChange([]);
+    toast.success("All images cleared");
   }, [images, onImagesChange]);
 
   const handleSortOptionChange = useCallback((option: SortOption) => {
     onSortOptionChange(option);
-    // Note: Sorting is now handled by the reducer
-  }, [onSortOptionChange]);
-
-  const handleDragStart = useCallback((index: number, onDragStart: (index: number) => void) => {
-    onDragStart(index);
-  }, []);
-
-  const handleDragEnd = useCallback((onDragEnd: () => void) => {
-    onDragEnd();
-  }, []);
+    if (option !== 'manual') {
+      const sortedImages = sortImages(images, option);
+      onImagesChange(sortedImages);
+    }
+  }, [images, onImagesChange, onSortOptionChange]);
 
   const handleDragOverItem = useCallback((
-    e: React.DragEvent, 
-    index: number, 
+    e: React.DragEvent,
+    index: number,
     draggedIndex: number | null,
     onReorder: (fromIndex: number, toIndex: number) => void,
-    onDragIndexChange: (index: number) => void
+    onDragStart: (index: number) => void
   ) => {
     e.preventDefault();
-    if (draggedIndex === null || draggedIndex === index) return;
+    
+    if (draggedIndex === null || draggedIndex === index) {
+      return;
+    }
 
-    onReorder(draggedIndex, index);
-    onDragIndexChange(index);
+    if (draggedIndex !== index) {
+      onReorder(draggedIndex, index);
+      onDragStart(index);
+    }
   }, []);
 
   return {
     handleFileSelect,
     handleDrop,
     handleDragOver,
-    removeImage,
-    clearAllImages,
+    handleRemoveImage,
+    handleClearAllImages,
     handleSortOptionChange,
-    handleDragStart,
-    handleDragEnd,
-    handleDragOverItem,
+    handleDragOverItem
   };
 }

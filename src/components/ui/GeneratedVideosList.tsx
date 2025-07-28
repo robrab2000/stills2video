@@ -1,9 +1,9 @@
-import { VideoPreview as VideoPreviewType } from '../../types';
+import { VideoPreview } from '../../types';
 
 interface GeneratedVideosListProps {
-  videos: VideoPreviewType[];
-  onPreview: (video: VideoPreviewType) => void;
-  onDownload: (video: VideoPreviewType) => void;
+  videos: VideoPreview[];
+  onPreview: (video: VideoPreview) => void;
+  onDownload: (video: VideoPreview) => void;
   onRemove: (id: string) => void;
   onClearAll: () => void;
   onTogglePanel: () => void;
@@ -21,9 +21,21 @@ export function GeneratedVideosList({
 }: GeneratedVideosListProps) {
   if (videos.length === 0) return null;
 
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const formatTimestamp = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString();
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm border">
-      <div className="flex justify-between items-center p-4 hover:bg-gray-50 transition-colors">
+      <div className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
         <button
           onClick={onTogglePanel}
           className="flex items-center hover:bg-gray-100 rounded px-2 py-1 transition-colors"
@@ -31,14 +43,20 @@ export function GeneratedVideosList({
           <span className="text-gray-400 text-xs mr-2">
             {isPanelCollapsed ? '▶' : '▼'}
           </span>
-          <h3 className="text-lg font-semibold">Generated Videos ({videos.length})</h3>
+          <h3 className="text-lg font-semibold">Generated Videos</h3>
+          <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+            {videos.length}
+          </span>
         </button>
-        <button
-          onClick={onClearAll}
-          className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
-        >
-          Clear All
-        </button>
+        
+        {videos.length > 0 && (
+          <button
+            onClick={onClearAll}
+            className="text-red-600 hover:text-red-800 text-sm px-3 py-1 hover:bg-red-50 rounded transition-colors"
+          >
+            Clear All
+          </button>
+        )}
       </div>
       
       {!isPanelCollapsed && (
@@ -47,24 +65,20 @@ export function GeneratedVideosList({
             {videos.map((video) => (
               <div
                 key={video.id}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
               >
                 <div className="flex items-center space-x-3">
-                  <div className="w-16 h-10 bg-gray-200 rounded flex items-center justify-center overflow-hidden">
-                    {video.thumbnailUrl ? (
-                      <img
-                        src={video.thumbnailUrl}
-                        alt="Video thumbnail"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-xs text-gray-600">🎬</span>
-                    )}
-                  </div>
+                  {video.thumbnailUrl && (
+                    <img
+                      src={video.thumbnailUrl}
+                      alt="Video thumbnail"
+                      className="w-12 h-8 object-cover rounded"
+                    />
+                  )}
                   <div>
                     <div className="font-medium text-sm">{video.name}</div>
                     <div className="text-xs text-gray-500">
-                      {new Date(video.timestamp).toLocaleTimeString()} • {video.extension.toUpperCase()}
+                      {video.extension.toUpperCase()} • {formatFileSize(video.blob.size)} • {formatTimestamp(video.timestamp)}
                     </div>
                   </div>
                 </div>
@@ -72,21 +86,21 @@ export function GeneratedVideosList({
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => onPreview(video)}
-                    className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                    className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors"
                   >
                     Preview
                   </button>
                   <button
                     onClick={() => onDownload(video)}
-                    className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors"
+                    className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
                   >
                     Download
                   </button>
                   <button
                     onClick={() => onRemove(video.id)}
-                    className="px-2 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                    className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
                   >
-                    ×
+                    Remove
                   </button>
                 </div>
               </div>
