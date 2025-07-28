@@ -22,16 +22,25 @@ interface VideoCodec {
   supported: boolean;
 }
 
+interface VideoPreview {
+  url: string;
+  blob: Blob;
+  extension: string;
+}
+
 export function ImageToVideoConverter() {
   const [images, setImages] = useState<ImageFile[]>([]);
   const [sortOption, setSortOption] = useState<SortOption>("manual");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState(0);
   const [fps, setFps] = useState(25); // frames per second
   const [videoWidth, setVideoWidth] = useState(1920);
   const [videoHeight, setVideoHeight] = useState(1080);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [selectedCodec, setSelectedCodec] = useState<string>("");
   const [videoCodecs, setVideoCodecs] = useState<VideoCodec[]>([]);
+  const [videoPreview, setVideoPreview] = useState<VideoPreview | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -159,6 +168,14 @@ export function ImageToVideoConverter() {
     setDraggedIndex(index);
   };
 
+  const downloadVideo = useCallback((videoPreview: VideoPreview) => {
+    const a = document.createElement("a");
+    a.href = videoPreview.url;
+    a.download = `images-video-${Date.now()}.${videoPreview.extension}`;
+    a.click();
+    toast.success("Video downloaded successfully!");
+  }, []);
+
   const generateVideo = async () => {
     if (images.length === 0) {
       toast.error("Please add some images first");
@@ -166,6 +183,8 @@ export function ImageToVideoConverter() {
     }
 
     setIsGenerating(true);
+    setGenerationProgress(0);
+    setVideoPreview(null);
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
     
@@ -196,15 +215,18 @@ export function ImageToVideoConverter() {
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
         const selectedCodecInfo = videoCodecs.find(codec => codec.mimeType === mimeType);
         const extension = selectedCodecInfo?.extension || (mimeType.includes("mp4") ? "mp4" : "webm");
-        a.download = `images-video-${Date.now()}.${extension}`;
-        a.click();
-        URL.revokeObjectURL(url);
+        
+        setVideoPreview({
+          url,
+          blob,
+          extension
+        });
+        setShowPreview(true);
         setIsGenerating(false);
-        toast.success("Video generated successfully!");
+        setGenerationProgress(100);
+        toast.success("Video generated successfully! Preview available.");
       };
 
       mediaRecorder.start();
@@ -247,6 +269,10 @@ export function ImageToVideoConverter() {
           img.src = images[i].url;
         });
 
+        // Update progress
+        const progress = ((i + 1) / images.length) * 100;
+        setGenerationProgress(progress);
+
         // Wait for the frame duration
         await new Promise(resolve => setTimeout(resolve, frameDuration));
       }
@@ -260,8 +286,17 @@ export function ImageToVideoConverter() {
       console.error("Error generating video:", error);
       toast.error("Failed to generate video");
       setIsGenerating(false);
+      setGenerationProgress(0);
     }
   };
+
+  const closePreview = useCallback(() => {
+    setShowPreview(false);
+    if (videoPreview) {
+      URL.revokeObjectURL(videoPreview.url);
+      setVideoPreview(null);
+    }
+  }, [videoPreview]);
 
   return (
     <div className="space-y-6">
@@ -409,6 +444,22 @@ export function ImageToVideoConverter() {
               {isGenerating ? "Generating..." : "Generate Video"}
             </button>
           </div>
+
+          {/* Progress Indicator */}
+          {isGenerating && (
+            <div className="mt-4">
+              <div className="flex justify-between text-sm text-gray-600 mb-2">
+                <span>Generating video...</span>
+                <span>{Math.round(generationProgress)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-green-600 h-2 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${generationProgress}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -465,6 +516,53 @@ export function ImageToVideoConverter() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Video Preview Modal */}
+      {showPreview && videoPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-semibold">Video Preview</h3>
+              <button
+                onClick={closePreview}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="p-4">
+              <video
+                src={videoPreview.url}
+                controls
+                className="w-full max-h-[60vh] object-contain bg-black rounded"
+                autoPlay
+                muted
+              />
+              
+              <div className="mt-4 flex justify-between items-center">
+                <div className="text-sm text-gray-600">
+                  Video format: {videoPreview.extension.toUpperCase()}
+                </div>
+                <div className="space-x-2">
+                  <button
+                    onClick={() => downloadVideo(videoPreview)}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                  >
+                    Download Video
+                  </button>
+                  <button
+                    onClick={closePreview}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
