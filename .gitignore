@@ -142,3 +142,6 @@ sketch
 
 # Next.js build output
 .next/
+
+# Test files
+test-images/
