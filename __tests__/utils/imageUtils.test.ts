@@ -133,10 +133,12 @@ describe('Image Utils', () => {
     test('should return array of video codecs', () => {
       const codecs = getAvailableVideoCodecs();
       
-      expect(codecs).toHaveLength(3);
+      expect(codecs).toHaveLength(5);
       expect(codecs[0].name).toBe('H.264 (MP4)');
-      expect(codecs[1].name).toBe('VP9 (WebM)');
-      expect(codecs[2].name).toBe('VP8 (WebM)');
+      expect(codecs[1].name).toBe('H.264 (AVC)');
+      expect(codecs[2].name).toBe('H.264 (AVC1)');
+      expect(codecs[3].name).toBe('VP9 (WebM)');
+      expect(codecs[4].name).toBe('VP8 (WebM)');
       
       codecs.forEach(codec => {
         expect(codec).toHaveProperty('name');

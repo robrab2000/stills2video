@@ -1,4 +1,4 @@
-import { ImageToVideoConverter } from '@/components/ImageToVideoConverter'
+import { ImageToVideoConverter } from '../components/ImageToVideoConverter';
 
 export default function Home() {
   return (
@@ -45,5 +45,5 @@ export default function Home() {
         </span>
       </footer>
     </div>
-  )
+  );
 } 

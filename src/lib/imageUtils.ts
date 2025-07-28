@@ -71,13 +71,41 @@ export function createImageFile(file: File): ImageFile {
  * Gets available video codecs with browser support detection
  */
 export function getAvailableVideoCodecs(): VideoCodec[] {
-  return [
+  // Check for MediaRecorder support first
+  if (typeof window === "undefined" || typeof MediaRecorder === "undefined") {
+    return [];
+  }
+
+  // Get user agent for browser-specific detection
+  const userAgent = navigator.userAgent.toLowerCase();
+  const isChrome = userAgent.includes('chrome') && !userAgent.includes('edge');
+  const isFirefox = userAgent.includes('firefox');
+  const isSafari = userAgent.includes('safari') && !userAgent.includes('chrome');
+  const isEdge = userAgent.includes('edge');
+
+  console.log("Browser detection:", { isChrome, isFirefox, isSafari, isEdge });
+
+  const codecs: VideoCodec[] = [
+    // H.264 variants - try different MIME types
     {
       name: "H.264 (MP4)",
       mimeType: "video/mp4;codecs=h264",
       extension: "mp4",
       supported: MediaRecorder.isTypeSupported("video/mp4;codecs=h264")
     },
+    {
+      name: "H.264 (AVC)",
+      mimeType: "video/mp4;codecs=avc1.42E01E",
+      extension: "mp4",
+      supported: MediaRecorder.isTypeSupported("video/mp4;codecs=avc1.42E01E")
+    },
+    {
+      name: "H.264 (AVC1)",
+      mimeType: "video/mp4;codecs=avc1.640028",
+      extension: "mp4",
+      supported: MediaRecorder.isTypeSupported("video/mp4;codecs=avc1.640028")
+    },
+    // WebM variants
     {
       name: "VP9 (WebM)",
       mimeType: "video/webm;codecs=vp9",
@@ -91,6 +119,30 @@ export function getAvailableVideoCodecs(): VideoCodec[] {
       supported: MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
     }
   ];
+
+  // Browser-specific H.264 support workarounds
+  if (isChrome || isEdge) {
+    // Chrome and Edge often support H.264 but might not report it correctly
+    const h264Supported = codecs.some(c => c.supported && (c.mimeType.includes('h264') || c.mimeType.includes('avc')));
+    if (!h264Supported) {
+      console.log("Chrome/Edge detected but no H.264 support reported - this might be a false negative");
+    }
+  }
+
+  if (isSafari) {
+    // Safari has limited MediaRecorder support, usually only WebM
+    console.log("Safari detected - MediaRecorder support is limited");
+  }
+
+  if (isFirefox) {
+    // Firefox typically has good WebM support but limited H.264 support in MediaRecorder
+    console.log("Firefox detected - good WebM support, limited H.264 in MediaRecorder");
+  }
+
+  // Log codec support for debugging
+  console.log("Codec support detection:", codecs.map(c => `${c.name}: ${c.supported}`));
+
+  return codecs;
 }
 
 /**

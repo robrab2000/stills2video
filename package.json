@@ -14,6 +14,8 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@vercel/analytics": "^1.2.2",
     "next": "15.2.4",
     "react": "^18.2.0",
