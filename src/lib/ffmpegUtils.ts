@@ -264,25 +264,45 @@ export class FFmpegManager {
         await this.load();
       } catch (error) {
         console.error('FFmpeg failed to load for thumbnail creation:', error);
-        return '';
+        // Try fallback immediately if FFmpeg can't load
+        return await this.createFallbackThumbnail(videoBlob);
       }
     }
 
     if (!this.ffmpeg) {
-      return '';
+      console.warn('FFmpeg not available, using fallback thumbnail');
+      return await this.createFallbackThumbnail(videoBlob);
     }
 
     try {
+      // Check if FFmpeg file system is in a good state
+      try {
+        await this.ffmpeg.listDir('/');
+      } catch (fsError) {
+        console.warn('FFmpeg file system error, using fallback thumbnail:', fsError);
+        return await this.createFallbackThumbnail(videoBlob);
+      }
+
       const videoData = await fetchFile(videoBlob);
-      await this.ffmpeg.writeFile('input_video.mp4', videoData);
+      
+      // Use unique filenames to avoid conflicts
+      const inputFileName = `input_video_${Date.now()}.mp4`;
+      const outputFileName = `thumbnail_${Date.now()}.jpg`;
+      
+      try {
+        await this.ffmpeg.writeFile(inputFileName, videoData);
+      } catch (writeError) {
+        console.warn('Failed to write video file to FFmpeg, using fallback:', writeError);
+        return await this.createFallbackThumbnail(videoBlob);
+      }
 
       // Extract first frame with optimization flags
       const baseCommand = [
-        '-i', 'input_video.mp4',
+        '-i', inputFileName,
         '-vframes', '1',
         '-f', 'image2',
         '-y',
-        'thumbnail.jpg'
+        outputFileName
       ];
 
       const optimizedCommand = this.getMultithreadingEnabled() 
@@ -290,20 +310,54 @@ export class FFmpegManager {
         : baseCommand;
 
       console.log('🖼️ Thumbnail FFmpeg command:', optimizedCommand.join(' '));
-      await this.ffmpeg.exec(optimizedCommand);
+      
+      try {
+        await this.ffmpeg.exec(optimizedCommand);
+      } catch (execError) {
+        console.warn('FFmpeg thumbnail generation failed, using fallback:', execError);
+        // Clean up input file before fallback
+        try {
+          await this.ffmpeg.deleteFile(inputFileName);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        return await this.createFallbackThumbnail(videoBlob);
+      }
 
-      const thumbnailData = await this.ffmpeg.readFile('thumbnail.jpg');
+      let thumbnailData: Uint8Array | string;
+      try {
+        thumbnailData = await this.ffmpeg.readFile(outputFileName);
+      } catch (readError) {
+        console.warn('Failed to read thumbnail file, using fallback:', readError);
+        // Clean up files before fallback
+        try {
+          await this.ffmpeg.deleteFile(inputFileName);
+          await this.ffmpeg.deleteFile(outputFileName);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        return await this.createFallbackThumbnail(videoBlob);
+      }
       
       // Clean up
       try {
-        await this.ffmpeg.deleteFile('input_video.mp4');
-        await this.ffmpeg.deleteFile('thumbnail.jpg');
+        await this.ffmpeg.deleteFile(inputFileName);
+        await this.ffmpeg.deleteFile(outputFileName);
       } catch (e) {
         // Ignore cleanup errors
         console.warn('Thumbnail cleanup failed:', e);
       }
 
-      const thumbnailBlob = new Blob([thumbnailData], { type: 'image/jpeg' });
+      // Handle both Uint8Array and string return types from FFmpeg
+      let thumbnailBlob: Blob;
+      if (thumbnailData instanceof Uint8Array) {
+        thumbnailBlob = new Blob([thumbnailData], { type: 'image/jpeg' });
+      } else {
+        // Convert string to Uint8Array if needed
+        const encoder = new TextEncoder();
+        thumbnailBlob = new Blob([encoder.encode(thumbnailData)], { type: 'image/jpeg' });
+      }
+      
       return URL.createObjectURL(thumbnailBlob);
     } catch (error) {
       console.error('Thumbnail creation error:', error);
@@ -313,7 +367,8 @@ export class FFmpegManager {
         return await this.createFallbackThumbnail(videoBlob);
       } catch (fallbackError) {
         console.error('Fallback thumbnail creation also failed:', fallbackError);
-        return '';
+        // Return a placeholder as last resort
+        return this.createPlaceholderThumbnail();
       }
     }
   }
@@ -323,11 +378,14 @@ export class FFmpegManager {
     const video = document.createElement('video');
     video.muted = true;
     video.playsInline = true;
+    video.crossOrigin = 'anonymous';
     
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error('Thumbnail creation timeout'));
-      }, 10000); // 10 second timeout
+        video.remove();
+        // Try placeholder as last resort
+        resolve(this.createPlaceholderThumbnail());
+      }, 15000); // 15 second timeout
 
       video.onloadeddata = () => {
         try {
@@ -337,10 +395,13 @@ export class FFmpegManager {
           const ctx = canvas.getContext('2d');
           
           if (!ctx) {
-            reject(new Error('Failed to get canvas context'));
+            video.remove();
+            // Try placeholder as last resort
+            resolve(this.createPlaceholderThumbnail());
             return;
           }
 
+          // Set reasonable thumbnail dimensions
           canvas.width = 320;
           canvas.height = 180;
           
@@ -348,22 +409,66 @@ export class FFmpegManager {
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           
           const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.8);
+          video.remove();
           resolve(thumbnailUrl);
         } catch (error) {
           clearTimeout(timeout);
-          reject(error);
+          video.remove();
+          // Try placeholder as last resort
+          resolve(this.createPlaceholderThumbnail());
         }
       };
       
-      video.onerror = () => {
+      video.onerror = (error) => {
         clearTimeout(timeout);
-        reject(new Error('Failed to load video for thumbnail'));
+        video.remove();
+        console.warn('Video loading error for thumbnail:', error);
+        // Try placeholder as last resort
+        resolve(this.createPlaceholderThumbnail());
       };
       
-      // Set video source
-      video.src = URL.createObjectURL(videoBlob);
-      video.load();
+      video.onabort = () => {
+        clearTimeout(timeout);
+        video.remove();
+        // Try placeholder as last resort
+        resolve(this.createPlaceholderThumbnail());
+      };
+      
+      // Set video source and load
+      try {
+        video.src = URL.createObjectURL(videoBlob);
+        video.load();
+      } catch (error) {
+        clearTimeout(timeout);
+        video.remove();
+        // Try placeholder as last resort
+        resolve(this.createPlaceholderThumbnail());
+      }
     });
+  }
+
+  private createPlaceholderThumbnail(): string {
+    // Create a simple placeholder thumbnail
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) {
+      return '';
+    }
+    
+    canvas.width = 320;
+    canvas.height = 180;
+    
+    // Draw a simple placeholder
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = '#666';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Video Thumbnail', canvas.width / 2, canvas.height / 2);
+    
+    return canvas.toDataURL('image/jpeg', 0.8);
   }
 
   /**
