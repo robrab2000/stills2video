@@ -1,3 +1,4 @@
+import { useMemo, useCallback } from 'react';
 import { VideoCodec, VideoSettings as VideoSettingsType, SortOption } from '../../types';
 
 interface VideoSettingsProps {
@@ -27,35 +28,66 @@ export function VideoSettings({
   onTogglePanel,
   isPanelCollapsed
 }: VideoSettingsProps) {
-  if (imagesCount === 0) return null;
+  // Memoize expensive calculations
+  const videoDuration = useMemo(() => {
+    return imagesCount / settings.fps;
+  }, [imagesCount, settings.fps]);
 
-  const handleSettingChange = (key: keyof VideoSettingsType, value: any) => {
-    onSettingsChange({ [key]: value });
-  };
-
-  const videoDuration = imagesCount / settings.fps;
-
-  // Determine the current stage based on progress
-  const getCurrentStage = () => {
+  const currentStage = useMemo(() => {
     if (generationProgress < 10) return "Initializing...";
     if (generationProgress < 30) return "Processing images...";
     if (generationProgress < 70) return "Encoding video...";
     if (generationProgress < 95) return "Finalizing...";
     return "Complete!";
-  };
+  }, [generationProgress]);
 
-  const getStageIcon = () => {
+  const stageIcon = useMemo(() => {
     if (generationProgress < 10) return "⚙️";
     if (generationProgress < 30) return "🖼️";
     if (generationProgress < 70) return "🎬";
     if (generationProgress < 95) return "✨";
     return "✅";
-  };
+  }, [generationProgress]);
+
+  // Memoize event handlers
+  const handleSettingChange = useCallback((key: keyof VideoSettingsType, value: any) => {
+    onSettingsChange({ [key]: value });
+  }, [onSettingsChange]);
+
+  const handleSortOptionChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    onSortOptionChange(e.target.value as SortOption);
+  }, [onSortOptionChange]);
+
+  const handleCodecChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    handleSettingChange('selectedCodec', e.target.value);
+  }, [handleSettingChange]);
+
+  const handleFpsChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    handleSettingChange('fps', parseFloat(e.target.value));
+  }, [handleSettingChange]);
+
+  const handleWidthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    handleSettingChange('videoWidth', parseInt(e.target.value));
+  }, [handleSettingChange]);
+
+  const handleHeightChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    handleSettingChange('videoHeight', parseInt(e.target.value));
+  }, [handleSettingChange]);
+
+  const handleTogglePanel = useCallback(() => {
+    onTogglePanel();
+  }, [onTogglePanel]);
+
+  const handleGenerateVideo = useCallback(() => {
+    onGenerateVideo();
+  }, [onGenerateVideo]);
+
+  if (imagesCount === 0) return null;
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
       <button
-        onClick={onTogglePanel}
+        onClick={handleTogglePanel}
         className="w-full p-4 flex items-center hover:bg-gray-50 transition-colors"
       >
         <span className="text-gray-400 text-xs mr-2">
@@ -73,7 +105,7 @@ export function VideoSettings({
               </label>
               <select
                 value={sortOption}
-                onChange={(e) => onSortOptionChange(e.target.value as SortOption)}
+                onChange={handleSortOptionChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="manual">Manual (drag to reorder)</option>
@@ -89,7 +121,7 @@ export function VideoSettings({
               </label>
               <select
                 value={settings.selectedCodec}
-                onChange={(e) => handleSettingChange('selectedCodec', e.target.value)}
+                onChange={handleCodecChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {videoCodecs.map((codec) => (
@@ -99,7 +131,7 @@ export function VideoSettings({
                     disabled={!codec.supported}
                     className={!codec.supported ? "text-gray-400" : ""}
                   >
-                    {codec.name} {!codec.supported ? "(Not Supported)" : ""}
+                    {codec.name} ({codec.extension.toUpperCase()})
                   </option>
                 ))}
               </select>
@@ -107,111 +139,89 @@ export function VideoSettings({
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Frames Per Second (FPS)
+                FPS
               </label>
               <input
                 type="number"
-                value={settings.fps}
-                onChange={(e) => handleSettingChange('fps', Number(e.target.value))}
                 min="0.1"
                 max="30"
                 step="0.1"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Video Width
-              </label>
-              <input
-                type="number"
-                value={settings.videoWidth}
-                onChange={(e) => handleSettingChange('videoWidth', Number(e.target.value))}
-                min="480"
-                max="3840"
-                step="16"
+                value={settings.fps}
+                onChange={handleFpsChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Video Height
+                Width
               </label>
               <input
                 type="number"
-                value={settings.videoHeight}
-                onChange={(e) => handleSettingChange('videoHeight', Number(e.target.value))}
+                min="480"
+                max="3840"
+                step="1"
+                value={settings.videoWidth}
+                onChange={handleWidthChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Height
+              </label>
+              <input
+                type="number"
                 min="360"
                 max="2160"
-                step="16"
+                step="1"
+                value={settings.videoHeight}
+                onChange={handleHeightChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
           
-          <div className="mt-4 flex justify-between items-center">
-            <div className="text-sm text-gray-600">
-              {imagesCount} images • Video duration: ~{videoDuration.toFixed(1)}s at {settings.fps} FPS
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium text-gray-700">
+                Estimated Duration: {videoDuration.toFixed(2)}s
+              </span>
+              <span className="text-sm text-gray-500">
+                {imagesCount} images
+              </span>
             </div>
+            
+            {isGenerating && (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">
+                    {stageIcon} {currentStage}
+                  </span>
+                  <span className="text-sm font-medium text-gray-700">
+                    {generationProgress.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${generationProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="mt-4">
             <button
-              onClick={onGenerateVideo}
+              onClick={handleGenerateVideo}
               disabled={isGenerating || imagesCount === 0}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
             >
-              {isGenerating ? "Generating..." : "Generate Video"}
+              {isGenerating ? 'Generating...' : 'Generate Video'}
             </button>
           </div>
-
-          {/* Enhanced Progress Indicator */}
-          {isGenerating && (
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg border">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center space-x-2">
-                  <span className="text-lg">{getStageIcon()}</span>
-                  <span className="font-medium text-gray-800">{getCurrentStage()}</span>
-                </div>
-                <span className="text-sm font-semibold text-green-600">
-                  {Math.round(generationProgress)}%
-                </span>
-              </div>
-              
-              {/* Main Progress Bar */}
-              <div className="w-full bg-gray-200 rounded-full h-3 mb-2 overflow-hidden">
-                <div 
-                  className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all duration-500 ease-out shadow-sm"
-                  style={{ width: `${generationProgress}%` }}
-                ></div>
-              </div>
-              
-              {/* Progress Details */}
-              <div className="flex justify-between text-xs text-gray-500">
-                <span>Processing {imagesCount} images</span>
-                <span>~{videoDuration.toFixed(1)}s video</span>
-              </div>
-              
-              {/* Stage Indicators */}
-              <div className="mt-3 flex justify-between text-xs">
-                <div className={`flex items-center space-x-1 ${generationProgress >= 10 ? 'text-green-600' : 'text-gray-400'}`}>
-                  <span>⚙️</span>
-                  <span>Init</span>
-                </div>
-                <div className={`flex items-center space-x-1 ${generationProgress >= 30 ? 'text-green-600' : 'text-gray-400'}`}>
-                  <span>🖼️</span>
-                  <span>Images</span>
-                </div>
-                <div className={`flex items-center space-x-1 ${generationProgress >= 70 ? 'text-green-600' : 'text-gray-400'}`}>
-                  <span>🎬</span>
-                  <span>Encode</span>
-                </div>
-                <div className={`flex items-center space-x-1 ${generationProgress >= 95 ? 'text-green-600' : 'text-gray-400'}`}>
-                  <span>✨</span>
-                  <span>Final</span>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

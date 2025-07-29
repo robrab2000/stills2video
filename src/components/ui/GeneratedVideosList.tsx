@@ -1,3 +1,4 @@
+import { useMemo, useCallback } from 'react';
 import { VideoPreview } from '../../types';
 
 interface GeneratedVideosListProps {
@@ -19,25 +20,52 @@ export function GeneratedVideosList({
   onTogglePanel,
   isPanelCollapsed
 }: GeneratedVideosListProps) {
-  if (videos.length === 0) return null;
-
-  const formatFileSize = (bytes: number) => {
+  // Memoize utility functions
+  const formatFileSize = useCallback((bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+  }, []);
 
-  const formatTimestamp = (timestamp: number) => {
+  const formatTimestamp = useCallback((timestamp: number) => {
     return new Date(timestamp).toLocaleString();
-  };
+  }, []);
+
+  // Memoize event handlers
+  const handleTogglePanel = useCallback(() => {
+    onTogglePanel();
+  }, [onTogglePanel]);
+
+  const handleClearAll = useCallback(() => {
+    onClearAll();
+  }, [onClearAll]);
+
+  const handlePreview = useCallback((video: VideoPreview) => {
+    onPreview(video);
+  }, [onPreview]);
+
+  const handleDownload = useCallback((video: VideoPreview) => {
+    onDownload(video);
+  }, [onDownload]);
+
+  const handleRemove = useCallback((videoId: string) => {
+    onRemove(videoId);
+  }, [onRemove]);
+
+  // Memoize sorted videos for better performance
+  const sortedVideos = useMemo(() => {
+    return [...videos].sort((a, b) => b.timestamp - a.timestamp);
+  }, [videos]);
+
+  if (videos.length === 0) return null;
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
       <div className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
         <button
-          onClick={onTogglePanel}
+          onClick={handleTogglePanel}
           className="flex items-center hover:bg-gray-100 rounded px-2 py-1 transition-colors"
         >
           <span className="text-gray-400 text-xs mr-2">
@@ -51,7 +79,7 @@ export function GeneratedVideosList({
         
         {videos.length > 0 && (
           <button
-            onClick={onClearAll}
+            onClick={handleClearAll}
             className="text-red-600 hover:text-red-800 text-sm px-3 py-1 hover:bg-red-50 rounded transition-colors"
           >
             Clear All
@@ -62,7 +90,7 @@ export function GeneratedVideosList({
       {!isPanelCollapsed && (
         <div className="px-6 pb-6">
           <div className="space-y-3">
-            {videos.map((video) => (
+            {sortedVideos.map((video) => (
               <div
                 key={video.id}
                 className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
@@ -73,6 +101,7 @@ export function GeneratedVideosList({
                       src={video.thumbnailUrl}
                       alt="Video thumbnail"
                       className="w-12 h-8 object-cover rounded"
+                      loading="lazy"
                     />
                   )}
                   <div>
@@ -85,19 +114,19 @@ export function GeneratedVideosList({
                 
                 <div className="flex items-center space-x-2">
                   <button
-                    onClick={() => onPreview(video)}
+                    onClick={() => handlePreview(video)}
                     className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors"
                   >
                     Preview
                   </button>
                   <button
-                    onClick={() => onDownload(video)}
+                    onClick={() => handleDownload(video)}
                     className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
                   >
                     Download
                   </button>
                   <button
-                    onClick={() => onRemove(video.id)}
+                    onClick={() => handleRemove(video.id)}
                     className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
                   >
                     Remove

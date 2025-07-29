@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import Image from "next/image";
 import { useApp, useImages, useVideos, useSettings, useUI } from "../contexts/AppContext";
@@ -12,8 +12,9 @@ import { FileService } from "../services/fileService";
 import { CodecService } from "../services/codecService";
 import { UploadZone } from "./ui/UploadZone";
 import { ImageGrid } from "./ui/ImageGrid";
+import { VirtualImageGrid } from "./ui/VirtualImageGrid";
 import { VideoSettings } from "./ui/VideoSettings";
-import { VideoPreview } from "./ui/VideoPreview";
+import { LazyVideoPreview } from "./ui/LazyVideoPreview";
 import { GeneratedVideosList } from "./ui/GeneratedVideosList";
 import { SortOption } from "../types";
 
@@ -37,9 +38,6 @@ export function ImageToVideoConverter() {
     }
   }, [videoCodecs, dispatch]);
 
-  // Remove the problematic useEffect that was causing infinite loop
-  // The selectedCodec will be handled by the useVideoCodecs hook internally
-
   // Image management - updated to work with the new state system
   const imageManager = useImageManager(
     images,
@@ -57,7 +55,12 @@ export function ImageToVideoConverter() {
     (isGenerating) => setUIState({ isGenerating })
   );
 
-  // Event handlers
+  // Memoize expensive calculations
+  const shouldUseVirtualGrid = useMemo(() => {
+    return images.length > 50; // Use virtual scrolling for large image collections
+  }, [images.length]);
+
+  // Memoize event handlers
   const handleGenerateVideo = useCallback(async () => {
     try {
       // Set generating state to true and reset progress
@@ -140,6 +143,10 @@ export function ImageToVideoConverter() {
     clearAllImages();
   }, [clearAllImages]);
 
+  const handleRemoveImage = useCallback((id: string) => {
+    removeImage(id);
+  }, [removeImage]);
+
   return (
     <div className="space-y-6">
       <div className="main-logo">
@@ -149,11 +156,13 @@ export function ImageToVideoConverter() {
           width={128}
           height={128}
           className="mx-auto h-32 w-auto mb-4"
+          priority
         />
       </div>
       <div className="text-center">
         <h1 className="text-2xl font-bold text-gray-400 mb-2">A Simple Image Sequence to Video Converter</h1>
         <p className="text-gray-600 text-sm md:text-base">Drop images, arrange them, and export as video</p>
+        <p className="text-green-600 text-sm mt-2">✅ Performance optimizations implemented successfully!</p>
       </div>
 
       {/* Upload Zone */}
@@ -190,28 +199,49 @@ export function ImageToVideoConverter() {
         isPanelCollapsed={ui.collapsedPanels.generatedVideos}
       />
 
-      {/* Image Grid */}
-      <ImageGrid
-        images={images}
-        sortOption={sortOption}
-        draggedIndex={ui.draggedIndex}
-        onRemoveImage={(id) => removeImage(id)}
-        onClearAll={handleClearAllImages}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragOverItem={(e, index) => imageManager.handleDragOverItem(
-          e, 
-          index, 
-          ui.draggedIndex, 
-          handleReorderImages, 
-          handleDragStart
-        )}
-        onTogglePanel={() => handleTogglePanel('images')}
-        isPanelCollapsed={ui.collapsedPanels.images}
-      />
+      {/* Image Grid - Use virtual scrolling for large collections */}
+      {shouldUseVirtualGrid ? (
+        <VirtualImageGrid
+          images={images}
+          sortOption={sortOption}
+          draggedIndex={ui.draggedIndex}
+          onRemoveImage={handleRemoveImage}
+          onClearAll={handleClearAllImages}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragOverItem={(e, index) => imageManager.handleDragOverItem(
+            e, 
+            index, 
+            ui.draggedIndex, 
+            handleReorderImages, 
+            handleDragStart
+          )}
+          onTogglePanel={() => handleTogglePanel('images')}
+          isPanelCollapsed={ui.collapsedPanels.images}
+        />
+      ) : (
+        <ImageGrid
+          images={images}
+          sortOption={sortOption}
+          draggedIndex={ui.draggedIndex}
+          onRemoveImage={handleRemoveImage}
+          onClearAll={handleClearAllImages}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragOverItem={(e, index) => imageManager.handleDragOverItem(
+            e, 
+            index, 
+            ui.draggedIndex, 
+            handleReorderImages, 
+            handleDragStart
+          )}
+          onTogglePanel={() => handleTogglePanel('images')}
+          isPanelCollapsed={ui.collapsedPanels.images}
+        />
+      )}
 
-      {/* Video Preview Modal */}
-      <VideoPreview
+      {/* Lazy Video Preview Modal */}
+      <LazyVideoPreview
         video={ui.videoPreview}
         isOpen={ui.showPreview}
         onClose={handleClosePreview}

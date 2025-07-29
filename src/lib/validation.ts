@@ -548,7 +548,7 @@ export function safeParse<T>(schema: z.ZodSchema<T>, data: unknown): { success: 
  */
 export function validatePartial<T>(schema: z.ZodSchema<T>, data: Partial<T>): ValidationResult {
   try {
-    schema.partial().parse(data);
+    (schema as any).partial().parse(data);
     return { isValid: true, errors: [] };
   } catch (error) {
     if (error && typeof error === 'object' && 'issues' in error && Array.isArray((error as any).issues)) {
