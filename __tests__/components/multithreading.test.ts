@@ -75,8 +75,8 @@ describe('Multithreading Implementation', () => {
       
       const threadCount = getOptimalThreadCount();
       
-      // Should be limited to 2 threads for low memory
-      expect(threadCount).toBe(2);
+      // Should be limited to 4 threads for low memory (2GB)
+      expect(threadCount).toBe(4);
     });
   });
 
@@ -177,15 +177,16 @@ describe('Multithreading Implementation', () => {
       const flags = getFFmpegOptimizationFlags();
       
       expect(flags).toContain('-max_muxing_queue_size');
-      expect(flags).toContain('1024');
+      expect(flags).toContain('512'); // Conservative queue for low memory
     });
 
-    test('should not add memory flags for high memory devices', () => {
+    test('should add memory optimization flags for high memory devices', () => {
       global.navigator = { ...mockNavigator, deviceMemory: 16 } as any;
       
       const flags = getFFmpegOptimizationFlags();
       
-      expect(flags).not.toContain('-max_muxing_queue_size');
+      expect(flags).toContain('-max_muxing_queue_size');
+      expect(flags).toContain('1024'); // Higher queue for high memory
     });
   });
 });

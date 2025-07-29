@@ -106,19 +106,26 @@ export function detectBrowserCapabilities(): BrowserCapabilities {
 export function getOptimalThreadCount(): number {
   const capabilities = detectBrowserCapabilities();
   
-  if (!capabilities.ffmpegMultithreading) {
-    return 1;
-  }
-
-  // Use hardware concurrency, but cap it to avoid overwhelming the system
-  const maxThreads = Math.min(capabilities.hardwareConcurrency, 8);
+  // Base thread count on hardware concurrency
+  let threadCount = capabilities.hardwareConcurrency || 1;
   
-  // For memory-constrained devices, use fewer threads
-  if (capabilities.deviceMemory && capabilities.deviceMemory < 4) {
-    return Math.min(maxThreads, 2);
+  // Adjust based on device memory if available
+  if (capabilities.deviceMemory) {
+    // More memory = more threads, but cap at reasonable limits
+    if (capabilities.deviceMemory >= 8) {
+      threadCount = Math.min(threadCount, 8); // Cap at 8 threads for high memory
+    } else if (capabilities.deviceMemory >= 4) {
+      threadCount = Math.min(threadCount, 6); // Cap at 6 threads for medium memory
+    } else {
+      threadCount = Math.min(threadCount, 4); // Cap at 4 threads for low memory
+    }
+  } else {
+    // No device memory info, use conservative limits
+    threadCount = Math.min(threadCount, 4);
   }
   
-  return maxThreads;
+  // Ensure minimum of 1 thread
+  return Math.max(1, threadCount);
 }
 
 /**
@@ -136,31 +143,40 @@ export function shouldEnableFFmpegMultithreading(): boolean {
  */
 export function getFFmpegOptimizationFlags(): string[] {
   const capabilities = detectBrowserCapabilities();
+  const threadCount = getOptimalThreadCount();
+  
   const flags: string[] = [];
-
+  
   // Thread count optimization
-  if (capabilities.ffmpegMultithreading) {
-    const threadCount = getOptimalThreadCount();
-    flags.push(`-threads`, threadCount.toString());
+  if (threadCount > 1) {
+    flags.push('-threads', threadCount.toString());
   }
-
-  // Browser-specific optimizations
-  if (capabilities.isChrome) {
-    // Chrome has good WebAssembly performance
-    flags.push('-cpu-used', '0'); // Best quality
+  
+  // CPU usage optimization based on browser and capabilities
+  if (capabilities.isChrome || capabilities.isEdge) {
+    // Chrome/Edge can handle more aggressive settings
+    flags.push('-cpu-used', '0'); // Fastest encoding
   } else if (capabilities.isFirefox) {
-    // Firefox may benefit from different settings
-    flags.push('-cpu-used', '1'); // Slightly faster
-  } else if (capabilities.isSafari) {
-    // Safari may need more conservative settings
-    flags.push('-cpu-used', '2'); // Balanced
+    // Firefox with more conservative settings
+    flags.push('-cpu-used', '1'); // Balanced speed/quality
+  } else {
+    // Safari and other browsers
+    flags.push('-cpu-used', '2'); // Conservative for compatibility
   }
-
-  // Memory optimization for constrained devices
-  if (capabilities.deviceMemory && capabilities.deviceMemory < 4) {
-    flags.push('-max_muxing_queue_size', '1024');
+  
+  // Memory optimization
+  if (capabilities.deviceMemory && capabilities.deviceMemory >= 4) {
+    flags.push('-max_muxing_queue_size', '1024'); // Higher queue for more memory
+  } else {
+    flags.push('-max_muxing_queue_size', '512'); // Conservative queue
   }
-
+  
+  // Additional performance flags for high-end systems
+  if (capabilities.hardwareConcurrency >= 6 && capabilities.deviceMemory && capabilities.deviceMemory >= 8) {
+    flags.push('-thread_type', 'frame'); // Frame-based threading
+    flags.push('-threads', 'auto'); // Let FFmpeg auto-detect optimal thread count
+  }
+  
   return flags;
 }
 

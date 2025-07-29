@@ -98,96 +98,97 @@ export class FFmpegManager {
       throw new Error('FFmpeg not loaded');
     }
 
+    const startTime = performance.now();
+    const isMultithreaded = this.getMultithreadingEnabled();
+    const threadCount = getOptimalThreadCount();
+
     try {
-      // Stage 1: Initialization (0-10%)
-      onProgress?.(5, 'Initializing FFmpeg...');
+      console.log(`🚀 Starting video generation: ${imageFiles.length} images, ${isMultithreaded ? 'multithreaded' : 'single-threaded'} (${threadCount} threads)`);
       
-      // Stage 2: Processing images (10-30%)
-      onProgress?.(10, 'Processing images...');
+      // Stage 1: Write image files (0-30%)
+      if (onProgress) onProgress(5, 'Loading images...');
       
-      // Write image files to FFmpeg
       for (let i = 0; i < imageFiles.length; i++) {
         const imageData = await fetchFile(imageFiles[i]);
         await this.ffmpeg.writeFile(`image_${i.toString().padStart(4, '0')}.jpg`, imageData);
         
-        // Update progress for image processing
-        const imageProgress = 10 + (i / imageFiles.length) * 20;
-        onProgress?.(imageProgress, `Processing image ${i + 1}/${imageFiles.length}...`);
+        if (onProgress) {
+          const progress = 5 + (i / imageFiles.length) * 25;
+          onProgress(Math.round(progress), `Processing image ${i + 1}/${imageFiles.length}`);
+        }
       }
 
-      // Create input file list
-      const inputList = imageFiles.map((_, i) => 
-        `file 'image_${i.toString().padStart(4, '0')}.jpg'`
-      ).join('\n');
-      await this.ffmpeg.writeFile('input.txt', inputList);
+      if (onProgress) onProgress(30, 'Generating video...');
 
-      // Stage 3: Encoding preparation (30-40%)
-      onProgress?.(30, 'Preparing video encoding...');
-
-      // Determine output format and codec
+      // Stage 2: Generate video with multithreading optimization
       const isH264 = settings.codec.includes('h264') || settings.codec.includes('avc');
+      const isVP9 = settings.codec.includes('vp9');
       const outputFormat = isH264 ? 'mp4' : 'webm';
-      const codec = isH264 ? 'libx264' : (settings.codec.includes('vp9') ? 'libvpx-vp9' : 'libvpx');
-
-      // Build base FFmpeg command
+      const codec = isH264 ? 'libx264' : (isVP9 ? 'libvpx-vp9' : 'libvpx');
+      
       const baseCommand = [
-        '-f', 'concat',
-        '-safe', '0',
-        '-i', 'input.txt',
+        '-framerate', settings.fps.toString(),
+        '-i', 'image_%04d.jpg',
         '-c:v', codec,
         '-pix_fmt', 'yuv420p',
-        '-r', settings.fps.toString(),
         '-s', `${settings.width}x${settings.height}`,
-        '-y', // Overwrite output
+        '-preset', 'medium',
+        '-crf', '23',
+        '-y',
         `output.${outputFormat}`
       ];
 
-      // Apply multithreading optimizations
+      // Apply multithreading optimization if enabled
       const optimizedCommand = this.getMultithreadingEnabled() 
         ? createOptimizedFFmpegCommand(baseCommand)
         : baseCommand;
 
-      console.log('FFmpeg command:', optimizedCommand.join(' '));
-      console.log(`Using ${this.getMultithreadingEnabled() ? 'multithreaded' : 'single-threaded'} processing`);
-
-      // Stage 4: Video encoding (40-90%)
-      onProgress?.(40, 'Encoding video...');
+      console.log('🎬 FFmpeg command:', optimizedCommand.join(' '));
+      console.log(`🔧 Using ${this.getMultithreadingEnabled() ? 'multithreaded' : 'single-threaded'} processing with ${getOptimalThreadCount()} threads`);
       
-      // Execute FFmpeg command
+      const encodingStartTime = performance.now();
       await this.ffmpeg.exec(optimizedCommand);
-      
-      // Simulate encoding progress (since FFmpeg doesn't provide real-time progress)
-      for (let i = 40; i <= 90; i += 10) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        onProgress?.(i, 'Encoding video...');
-      }
+      const encodingTime = performance.now() - encodingStartTime;
 
-      // Stage 5: Finalizing (90-100%)
-      onProgress?.(90, 'Finalizing video...');
-      
-      // Read the output file
-      const data = await this.ffmpeg.readFile(`output.${outputFormat}`);
-      
-      // Clean up files
-      for (let i = 0; i < imageFiles.length; i++) {
-        try {
-          await this.ffmpeg.deleteFile(`image_${i.toString().padStart(4, '0')}.jpg`);
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      }
+      if (onProgress) onProgress(80, 'Finalizing video...');
+
+      // Stage 3: Read the output
+      const videoData = await this.ffmpeg.readFile(`output.${outputFormat}`);
+      const videoBlob = new Blob([videoData], { type: `video/${outputFormat}` });
+
+      if (onProgress) onProgress(90, 'Cleaning up...');
+
+      // Stage 4: Cleanup
+      await this.cleanupFiles(imageFiles.length, outputFormat);
+
+      if (onProgress) onProgress(100, 'Complete');
+
+      const totalTime = performance.now() - startTime;
+      console.log(`✅ Video generation completed in ${totalTime.toFixed(2)}ms (encoding: ${encodingTime.toFixed(2)}ms)`);
+      console.log(`📊 Performance: ${imageFiles.length} images processed at ${(imageFiles.length / (totalTime / 1000)).toFixed(2)} images/second`);
+
+      return videoBlob;
+    } catch (error) {
+      const totalTime = performance.now() - startTime;
+      console.error(`❌ Video generation failed after ${totalTime.toFixed(2)}ms:`, error);
+      throw error;
+    }
+  }
+
+  private async cleanupFiles(imageCount: number, outputFormat: string) {
+    if (!this.ffmpeg) return;
+    
+    for (let i = 0; i < imageCount; i++) {
       try {
-        await this.ffmpeg.deleteFile('input.txt');
-        await this.ffmpeg.deleteFile(`output.${outputFormat}`);
+        await this.ffmpeg.deleteFile(`image_${i.toString().padStart(4, '0')}.jpg`);
       } catch (e) {
         // Ignore cleanup errors
       }
-
-      onProgress?.(100, 'Video generation complete!');
-      return new Blob([data], { type: `video/${outputFormat}` });
-    } catch (error) {
-      console.error('FFmpeg error:', error);
-      throw new Error(`FFmpeg processing failed: ${error}`);
+    }
+    try {
+      await this.ffmpeg.deleteFile(`output.${outputFormat}`);
+    } catch (e) {
+      // Ignore cleanup errors
     }
   }
 
@@ -288,6 +289,7 @@ export class FFmpegManager {
         ? createOptimizedFFmpegCommand(baseCommand)
         : baseCommand;
 
+      console.log('🖼️ Thumbnail FFmpeg command:', optimizedCommand.join(' '));
       await this.ffmpeg.exec(optimizedCommand);
 
       const thumbnailData = await this.ffmpeg.readFile('thumbnail.jpg');
