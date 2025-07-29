@@ -145,3 +145,7 @@ sketch
 
 # Test files
 test-images/
+
+# Vercel
+.vercel
+.vercel/output
