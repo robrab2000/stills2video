@@ -53,7 +53,7 @@ export function useImageManager(
   }, [dispatch]);
 
   const handleClearAllImages = useCallback(() => {
-    FileService.cleanupImageUrls(images);
+    FileService.cleanupUrls(images.map(img => img.url));
     dispatch({ type: 'CLEAR_ALL_IMAGES' });
     toast.success("All images cleared");
   }, [images, dispatch]);

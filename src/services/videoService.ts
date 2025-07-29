@@ -1,8 +1,9 @@
 import { ImageFile, VideoPreview, VideoSettings } from '../types';
+import { validateVideoGeneration } from '../lib/validation';
+import { calculateFrameDuration, estimateVideoSize, calculateVideoDuration, formatDuration, estimateProcessingTime, getVideoQualityScore } from '../lib/videoUtils';
+import { formatFileSize, generateId } from '../lib/uiUtils';
 import { calculateImageScaling } from '../lib/imageUtils';
-import { CodecService } from './codecService';
-import { FileService } from './fileService';
-import { generateVideoWithFFmpeg, ffmpegManager } from '../lib/ffmpegUtils';
+import { ffmpegManager, generateVideoWithFFmpeg } from '../lib/ffmpegUtils';
 
 export interface VideoGenerationResult {
   success: boolean;
@@ -19,8 +20,8 @@ export class VideoService {
     videoCodecs: any[],
     onProgress?: (progress: number) => void
   ): Promise<VideoPreview> {
-    // Validate inputs
-    const validation = this.validateVideoGenerationInputs(images, settings, selectedCodec, videoCodecs);
+    // Validate inputs using the new validation utility
+    const validation = validateVideoGeneration(images, settings, selectedCodec);
     if (!validation.isValid) {
       throw new Error(`Video generation validation failed: ${validation.errors.join(', ')}`);
     }
@@ -55,9 +56,9 @@ export class VideoService {
         const url = URL.createObjectURL(videoBlob);
         const selectedCodecInfo = videoCodecs.find((codec: any) => codec.mimeType === selectedCodec);
         const extension = selectedCodecInfo?.extension || (selectedCodec.includes("mp4") ? "mp4" : "webm");
-        const videoId = Math.random().toString(36).substr(2, 9);
+        const videoId = generateId();
         const timestamp = Date.now();
-        const videoName = FileService.generateUniqueFileName('video', extension);
+        const videoName = `video_${timestamp}_${videoId}.${extension}`;
         
         // Create thumbnail using FFmpeg
         const thumbnailUrl = await this.createThumbnail(videoBlob);
@@ -85,50 +86,6 @@ export class VideoService {
     return await this.generateVideoWithMediaRecorder(images, settings, selectedCodec, videoCodecs, onProgress);
   }
 
-  private static validateVideoGenerationInputs(
-    images: ImageFile[],
-    settings: VideoSettings,
-    selectedCodec: string,
-    videoCodecs: any[]
-  ): { isValid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    console.log('🔍 Validating video generation inputs:', {
-      imagesCount: images.length,
-      selectedCodec,
-      videoCodecsCount: videoCodecs.length,
-      availableCodecs: videoCodecs.map(c => ({ name: c.name, mimeType: c.mimeType, supported: c.supported }))
-    });
-
-    // Validate images
-    if (images.length === 0) {
-      errors.push("At least one image is required");
-    }
-
-    if (images.length > 1000) {
-      errors.push("Maximum 1000 images allowed");
-    }
-
-    // Validate settings
-    const settingsValidation = FileService.validateVideoSettings(settings);
-    if (!settingsValidation.isValid) {
-      errors.push(...settingsValidation.errors);
-    }
-
-    // Validate codec
-    const codecValidation = CodecService.validateCodec(selectedCodec, videoCodecs);
-    if (!codecValidation.isValid) {
-      errors.push(...codecValidation.errors);
-    }
-
-    console.log('✅ Validation result:', { isValid: errors.length === 0, errors });
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
-  }
-
   private static async generateVideoWithMediaRecorder(
     images: ImageFile[],
     settings: VideoSettings,
@@ -136,102 +93,85 @@ export class VideoService {
     videoCodecs: any[],
     onProgress?: (progress: number) => void
   ): Promise<VideoPreview> {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
-    
-    canvas.width = settings.videoWidth;
-    canvas.height = settings.videoHeight;
-
-    const stream = canvas.captureStream(30);
-    
-    // Enhanced codec selection with better fallback
-    let mimeType = selectedCodec;
-    let codecToUse = videoCodecs.find((codec: any) => codec.mimeType === selectedCodec);
-    
-    if (!mimeType || !MediaRecorder.isTypeSupported(mimeType)) {
-      console.log("Selected codec not supported, looking for fallback...");
-      
-      // Try to get the best available codec
-      const bestCodec = CodecService.getBestCodec(videoCodecs);
-      if (bestCodec) {
-        mimeType = bestCodec.mimeType;
-        codecToUse = bestCodec;
-        console.log("Using best available codec:", bestCodec.name);
-      } else {
-        // Try H.264 even if not reported as supported (browser workaround)
-        const userAgent = navigator.userAgent.toLowerCase();
-        const isChrome = userAgent.includes('chrome') && !userAgent.includes('edge');
-        const isEdge = userAgent.includes('edge');
-        
-        if (isChrome || isEdge) {
-          console.log("Trying H.264 despite MediaRecorder report...");
-          mimeType = "video/mp4;codecs=h264";
-          codecToUse = { name: "H.264 (MP4)", mimeType, extension: "mp4", supported: true };
-        } else {
-          // Final fallback
-          mimeType = "video/webm;codecs=vp8";
-          codecToUse = { name: "VP8 (WebM)", mimeType, extension: "webm", supported: true };
-          console.log("Using VP8 fallback codec");
-        }
-      }
-    }
-    
-    console.log("Final selected codec:", mimeType);
-    
-    const mediaRecorder = new MediaRecorder(stream, {
-      mimeType: mimeType,
-    });
-
     return new Promise((resolve, reject) => {
-      const chunks: Blob[] = [];
-      
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
+      try {
+        // Create canvas for video generation
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          reject(new Error('Failed to get canvas context'));
+          return;
         }
-      };
 
-      mediaRecorder.onstop = async () => {
-        try {
-          const blob = new Blob(chunks, { type: mimeType });
-          const url = URL.createObjectURL(blob);
-          const extension = codecToUse?.extension || (mimeType.includes("mp4") ? "mp4" : "webm");
-          const videoId = Math.random().toString(36).substr(2, 9);
-          const timestamp = Date.now();
-          const videoName = FileService.generateUniqueFileName('video', extension);
-          
-          const thumbnailUrl = await this.createThumbnail(blob);
-          
-          const video: VideoPreview = {
-            url,
-            blob,
-            extension,
-            id: videoId,
-            timestamp,
-            name: videoName,
-            thumbnailUrl
-          };
-          
-          resolve(video);
-        } catch (error) {
-          reject(error);
+        canvas.width = settings.videoWidth;
+        canvas.height = settings.videoHeight;
+
+        // Find supported codec
+        const supportedCodec = videoCodecs.find(codec => codec.supported);
+        if (!supportedCodec) {
+          reject(new Error('No supported video codec found'));
+          return;
         }
-      };
 
-      mediaRecorder.onerror = (error) => {
-        console.error("MediaRecorder error:", error);
-        reject(error);
-      };
+        // Create MediaRecorder
+        const stream = canvas.captureStream(settings.fps);
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: supportedCodec.mimeType
+        });
 
-      mediaRecorder.start();
+        const chunks: Blob[] = [];
+        
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            chunks.push(event.data);
+          }
+        };
 
-      this.processFrames(images, settings, ctx, canvas, onProgress)
-        .then(() => {
-          setTimeout(() => {
+        mediaRecorder.onstop = async () => {
+          try {
+            const videoBlob = new Blob(chunks, { type: supportedCodec.mimeType });
+            const url = URL.createObjectURL(videoBlob);
+            const videoId = generateId();
+            const timestamp = Date.now();
+            const videoName = `video_${timestamp}_${videoId}.${supportedCodec.extension}`;
+            
+            // Create thumbnail
+            const thumbnailUrl = await this.createThumbnail(videoBlob);
+            
+            const video: VideoPreview = {
+              url,
+              blob: videoBlob,
+              extension: supportedCodec.extension,
+              id: videoId,
+              timestamp,
+              name: videoName,
+              thumbnailUrl
+            };
+            
+            resolve(video);
+          } catch (error) {
+            reject(error);
+          }
+        };
+
+        mediaRecorder.onerror = (event) => {
+          reject(new Error(`MediaRecorder error: ${event}`));
+        };
+
+        // Start recording
+        mediaRecorder.start();
+
+        // Process frames
+        this.processFrames(images, settings, ctx, canvas, onProgress)
+          .then(() => {
             mediaRecorder.stop();
-          }, 100);
-        })
-        .catch(reject);
+          })
+          .catch(reject);
+
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
@@ -242,94 +182,119 @@ export class VideoService {
     canvas: HTMLCanvasElement,
     onProgress?: (progress: number) => void
   ): Promise<void> {
-    const frameDuration = 1000 / settings.fps;
-
-    // Initial progress update
-    onProgress?.(10);
-
-    for (let i = 0; i < images.length; i++) {
-      const img = new window.Image();
-      await new Promise<void>((resolve) => {
+    const frameDuration = calculateFrameDuration(settings.fps);
+    const totalFrames = images.length;
+    
+    for (let i = 0; i < totalFrames; i++) {
+      const image = images[i];
+      
+      // Load image
+      await new Promise<void>((resolve, reject) => {
+        const img = new Image();
         img.onload = () => {
-          ctx.fillStyle = "#000000";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          
-          const scaling = calculateImageScaling(
-            img.width,
-            img.height,
-            canvas.width,
-            canvas.height
-          );
-          
-          ctx.drawImage(
-            img, 
-            scaling.offsetX, 
-            scaling.offsetY, 
-            scaling.scaledWidth, 
-            scaling.scaledHeight
-          );
-          resolve();
+          try {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Calculate scaling
+            const scaling = calculateImageScaling(
+              img.width,
+              img.height,
+              canvas.width,
+              canvas.height
+            );
+            
+            // Draw image
+            ctx.drawImage(
+              img,
+              scaling.offsetX,
+              scaling.offsetY,
+              scaling.scaledWidth,
+              scaling.scaledHeight
+            );
+            
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
         };
-        img.src = images[i].url;
+        img.onerror = () => reject(new Error(`Failed to load image: ${image.name}`));
+        img.src = image.url;
       });
-
-      // Update progress based on frame processing
-      const progress = 10 + ((i + 1) / images.length) * 80; // 10-90% for frame processing
+      
+      // Update progress
+      const progress = ((i + 1) / totalFrames) * 100;
       onProgress?.(progress);
-
+      
+      // Wait for frame duration
       await new Promise(resolve => setTimeout(resolve, frameDuration));
     }
-
-    // Final progress update
-    onProgress?.(100);
   }
 
   static async createThumbnail(videoBlob: Blob): Promise<string> {
     try {
-      // Try FFmpeg first for better thumbnail quality
-      const ffmpegReady = await ffmpegManager.isReady();
-      if (ffmpegReady) {
-        return await ffmpegManager.createThumbnail(videoBlob);
-      }
-    } catch (error) {
-      console.log("FFmpeg thumbnail failed, using fallback method:", error);
-    }
-    
-    // Fallback to canvas method
-    return new Promise((resolve) => {
+      // Create video element
       const video = document.createElement('video');
       video.muted = true;
-      video.crossOrigin = 'anonymous';
+      video.playsInline = true;
       
-      video.onloadeddata = () => {
-        video.currentTime = 0;
-      };
+      // Create canvas for thumbnail
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
       
-      video.onseeked = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 120;
-        canvas.height = 80;
-        const ctx = canvas.getContext('2d')!;
+      if (!ctx) {
+        throw new Error('Failed to get canvas context for thumbnail');
+      }
+      
+      canvas.width = 320;
+      canvas.height = 180;
+      
+      return new Promise((resolve, reject) => {
+        video.onloadeddata = () => {
+          try {
+            // Seek to middle of video
+            video.currentTime = video.duration / 2;
+          } catch (error) {
+            // If seeking fails, use first frame
+            video.currentTime = 0;
+          }
+        };
         
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        video.onseeked = () => {
+          try {
+            // Draw video frame to canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to blob URL
+            canvas.toBlob((blob) => {
+              if (blob) {
+                const thumbnailUrl = URL.createObjectURL(blob);
+                resolve(thumbnailUrl);
+              } else {
+                reject(new Error('Failed to create thumbnail blob'));
+              }
+            }, 'image/jpeg', 0.8);
+          } catch (error) {
+            reject(error);
+          }
+        };
         
-        const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.8);
-        resolve(thumbnailUrl);
+        video.onerror = () => {
+          reject(new Error('Failed to load video for thumbnail'));
+        };
         
-        URL.revokeObjectURL(video.src);
-      };
-      
-      video.onerror = () => {
-        resolve('');
-        URL.revokeObjectURL(video.src);
-      };
-      
-      video.src = URL.createObjectURL(videoBlob);
-    });
+        // Set video source
+        video.src = URL.createObjectURL(videoBlob);
+      });
+    } catch (error) {
+      console.error('Failed to create thumbnail:', error);
+      // Return a placeholder or default thumbnail
+      return '';
+    }
   }
 
   static estimateVideoDuration(imageCount: number, fps: number): number {
-    return imageCount / fps;
+    return calculateVideoDuration(imageCount, fps);
   }
 
   static estimateVideoSize(
@@ -339,7 +304,7 @@ export class VideoService {
     height: number,
     codec: string
   ): number {
-    return FileService.estimateVideoSize(imageCount, fps, width, height, codec);
+    return estimateVideoSize(imageCount, fps, width, height, codec);
   }
 
   static getVideoInfo(video: VideoPreview): {
@@ -348,16 +313,62 @@ export class VideoService {
     format: string;
     quality: string;
   } {
-    const duration = this.estimateVideoDuration(video.blob.size / 1024, 30); // Rough estimate
-    const size = FileService.formatFileSize(video.blob.size);
-    const format = video.extension.toUpperCase();
-    const quality = CodecService.getCodecQuality(video.extension === 'mp4' ? 'h264' : 'vp8');
-
+    const size = formatFileSize(video.blob.size);
+    const extension = video.name.split('.').pop() || 'unknown';
+    
+    // Estimate duration based on file size and typical bitrates
+    const estimatedDuration = this.estimateVideoDurationFromSize(video.blob.size, extension);
+    
     return {
-      duration,
+      duration: estimatedDuration,
       size,
-      format,
-      quality
+      format: extension.toUpperCase(),
+      quality: this.getVideoQuality(video.blob.size, extension)
     };
+  }
+
+  static getVideoQualityScore(settings: VideoSettings): {
+    score: number;
+    level: 'low' | 'medium' | 'high';
+    factors: string[];
+  } {
+    return getVideoQualityScore(settings);
+  }
+
+  static estimateProcessingTime(
+    imageCount: number,
+    width: number,
+    height: number,
+    fps: number,
+    codec: string
+  ): number {
+    return estimateProcessingTime(imageCount, width, height, fps, codec);
+  }
+
+  private static estimateVideoDurationFromSize(fileSize: number, format: string): number {
+    // Rough estimation based on typical bitrates
+    let bitrate: number;
+    
+    switch (format.toLowerCase()) {
+      case 'mp4':
+        bitrate = 2000000; // 2 Mbps
+        break;
+      case 'webm':
+        bitrate = 1500000; // 1.5 Mbps
+        break;
+      default:
+        bitrate = 1000000; // 1 Mbps
+    }
+    
+    return (fileSize * 8) / bitrate; // Convert bytes to bits, then divide by bitrate
+  }
+
+  private static getVideoQuality(fileSize: number, format: string): string {
+    // Rough quality estimation based on file size
+    const sizeInMB = fileSize / (1024 * 1024);
+    
+    if (sizeInMB > 50) return 'High';
+    if (sizeInMB > 20) return 'Medium';
+    return 'Low';
   }
 }

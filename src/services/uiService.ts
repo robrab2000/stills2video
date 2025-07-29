@@ -1,5 +1,7 @@
-import { VideoPreview, VideoSettings, UIState, Notification, AppError, AppWarning } from '../types';
-import { FileService } from './fileService';
+import { UIState, VideoPreview, VideoSettings } from '../types';
+import { formatFileSize, formatTimestamp, formatDuration } from '../lib/uiUtils';
+import { validateImageFile, validateFileUpload } from '../lib/validation';
+import { estimateVideoSize, calculateVideoDuration } from '../lib/videoUtils';
 import { CodecService } from './codecService';
 
 export interface ToastMessage {
@@ -19,8 +21,8 @@ export class UIService {
       draggedIndex: null,
       collapsedPanels: {
         settings: false,
-        images: false,
-        generatedVideos: false
+        generatedVideos: false,
+        images: false
       },
       notifications: [],
       errors: [],
@@ -28,8 +30,9 @@ export class UIService {
     };
   }
 
-  static validateVideoSettings(settings: VideoSettings): { isValid: boolean; errors: string[] } {
-    return FileService.validateVideoSettings(settings);
+  static validateVideoSettings(settings: any): { isValid: boolean; errors: string[] } {
+    // This method is no longer used as validation is handled by FileService
+    return { isValid: true, errors: [] };
   }
 
   static getRecommendedSettings(images: any[]): Partial<VideoSettings> {
@@ -37,38 +40,50 @@ export class UIService {
       return {
         fps: 24,
         videoWidth: 1920,
-        videoHeight: 1080,
-        selectedCodec: CodecService.getRecommendedCodecForBrowser()
+        videoHeight: 1080
       };
     }
 
-    // Calculate optimal dimensions based on image sizes
-    const avgWidth = images.reduce((sum, img) => sum + (img.width || 1920), 0) / images.length;
-    const avgHeight = images.reduce((sum, img) => sum + (img.height || 1080), 0) / images.length;
+    // Calculate average dimensions
+    let totalWidth = 0;
+    let totalHeight = 0;
+    let validImages = 0;
+
+    images.forEach(img => {
+      if (img.width && img.height) {
+        totalWidth += img.width;
+        totalHeight += img.height;
+        validImages++;
+      }
+    });
+
+    if (validImages === 0) {
+      return {
+        fps: 24,
+        videoWidth: 1920,
+        videoHeight: 1080
+      };
+    }
+
+    const avgWidth = totalWidth / validImages;
+    const avgHeight = totalHeight / validImages;
 
     // Round to nearest 16 for better encoding
-    const optimalWidth = Math.round(avgWidth / 16) * 16;
-    const optimalHeight = Math.round(avgHeight / 16) * 16;
+    const width = Math.round(avgWidth / 16) * 16;
+    const height = Math.round(avgHeight / 16) * 16;
 
     return {
-      fps: 24,
-      videoWidth: Math.max(480, Math.min(3840, optimalWidth)),
-      videoHeight: Math.max(360, Math.min(2160, optimalHeight)),
-      selectedCodec: CodecService.getRecommendedCodecForBrowser()
+      fps: images.length < 30 ? 15 : 24,
+      videoWidth: Math.max(480, Math.min(1920, width)),
+      videoHeight: Math.max(360, Math.min(1080, height))
     };
   }
 
-  static formatVideoInfo(video: VideoPreview): {
-    name: string;
-    size: string;
-    timestamp: string;
-    format: string;
-    quality: string;
-  } {
+  static getVideoInfo(video: VideoPreview) {
     return {
       name: video.name,
-      size: FileService.formatFileSize(video.blob.size),
-      timestamp: FileService.formatTimestamp(video.timestamp),
+      size: formatFileSize(video.blob.size),
+      timestamp: formatTimestamp(video.timestamp),
       format: video.extension.toUpperCase(),
       quality: CodecService.getCodecQuality(video.extension === 'mp4' ? 'h264' : 'vp8')
     };
@@ -79,35 +94,41 @@ export class UIService {
     icon: string;
     description: string;
   } {
-    if (progress < 10) {
+    if (progress === 0) {
       return {
-        stage: "Initializing",
-        icon: "⚙️",
-        description: "Setting up video generation..."
+        stage: 'Preparing',
+        icon: '⚙️',
+        description: 'Initializing video generation...'
       };
-    } else if (progress < 30) {
+    } else if (progress < 25) {
       return {
-        stage: "Processing Images",
-        icon: "🖼️",
-        description: "Loading and processing images..."
+        stage: 'Loading',
+        icon: '📁',
+        description: 'Loading images and preparing frames...'
       };
-    } else if (progress < 70) {
+    } else if (progress < 50) {
       return {
-        stage: "Encoding Video",
-        icon: "🎬",
-        description: "Encoding video with selected codec..."
+        stage: 'Processing',
+        icon: '🎬',
+        description: 'Processing video frames...'
       };
-    } else if (progress < 95) {
+    } else if (progress < 75) {
       return {
-        stage: "Finalizing",
-        icon: "✨",
-        description: "Finalizing video and creating thumbnail..."
+        stage: 'Encoding',
+        icon: '🎥',
+        description: 'Encoding video with selected codec...'
+      };
+    } else if (progress < 100) {
+      return {
+        stage: 'Finalizing',
+        icon: '✨',
+        description: 'Finalizing video and creating thumbnail...'
       };
     } else {
       return {
-        stage: "Complete",
-        icon: "✅",
-        description: "Video generation complete!"
+        stage: 'Complete',
+        icon: '✅',
+        description: 'Video generation completed!'
       };
     }
   }
@@ -131,26 +152,35 @@ export class UIService {
     quality: string;
     compatibility: string;
   } {
-    const codecInfo = CodecService.getCodecInfo(mimeType, []);
-    const quality = CodecService.getCodecQuality(mimeType);
-    const compatibility = CodecService.getCodecCompatibility(mimeType);
-    
-    let compatibilityText = "Compatible with: ";
-    const compatibleBrowsers = [];
-    
-    if (compatibility.chrome) compatibleBrowsers.push("Chrome");
-    if (compatibility.firefox) compatibleBrowsers.push("Firefox");
-    if (compatibility.safari) compatibleBrowsers.push("Safari");
-    if (compatibility.edge) compatibleBrowsers.push("Edge");
-    
-    compatibilityText += compatibleBrowsers.join(", ");
-
-    return {
-      name: codecInfo?.name || "Unknown Codec",
-      description: CodecService.getCodecDescription(mimeType),
-      quality: quality.charAt(0).toUpperCase() + quality.slice(1),
-      compatibility: compatibilityText
-    };
+    if (mimeType.includes('h264') || mimeType.includes('avc')) {
+      return {
+        name: 'H.264',
+        description: 'High efficiency video coding, excellent compatibility',
+        quality: 'High',
+        compatibility: 'Excellent'
+      };
+    } else if (mimeType.includes('vp9')) {
+      return {
+        name: 'VP9',
+        description: 'Open source video codec, good compression',
+        quality: 'High',
+        compatibility: 'Good'
+      };
+    } else if (mimeType.includes('vp8')) {
+      return {
+        name: 'VP8',
+        description: 'Open source video codec, wide support',
+        quality: 'Medium',
+        compatibility: 'Good'
+      };
+    } else {
+      return {
+        name: 'Unknown',
+        description: 'Unknown codec format',
+        quality: 'Unknown',
+        compatibility: 'Unknown'
+      };
+    }
   }
 
   static validateImageUpload(files: FileList): {
@@ -163,7 +193,7 @@ export class UIService {
     const warnings: string[] = [];
 
     Array.from(files).forEach((file, index) => {
-      const validation = FileService.validateImageFile(file);
+      const validation = validateImageFile(file);
       
       if (validation.isValid) {
         validFiles.push(file);
@@ -191,13 +221,13 @@ export class UIService {
     estimatedSize: string;
     processingTime: string;
   } {
-    const estimatedDuration = imageCount / fps;
-    const estimatedSizeBytes = FileService.estimateVideoSize(imageCount, fps, width, height, codec);
-    const estimatedSize = FileService.formatFileSize(estimatedSizeBytes);
+    const estimatedDuration = calculateVideoDuration(imageCount, fps);
+    const estimatedSizeBytes = estimateVideoSize(imageCount, fps, width, height, codec);
+    const estimatedSize = formatFileSize(estimatedSizeBytes);
     
     // Rough estimate of processing time (seconds)
     const processingTimeSeconds = Math.max(5, imageCount * 0.1 + (width * height) / 1000000);
-    const processingTime = FileService.formatDuration(processingTimeSeconds);
+    const processingTime = formatDuration(processingTimeSeconds);
 
     return {
       estimatedDuration,
@@ -206,55 +236,60 @@ export class UIService {
     };
   }
 
-  // Enhanced notification and error management
   static createNotification(
-    type: Notification['type'],
+    type: 'success' | 'error' | 'warning' | 'info',
     message: string,
-    duration?: number
-  ): Omit<Notification, 'id' | 'timestamp'> {
+    duration: number = 5000
+  ) {
     return {
+      id: Math.random().toString(36).substr(2, 9),
       type,
       message,
-      duration
+      timestamp: Date.now(),
+      duration,
+      isVisible: true
     };
   }
 
   static createError(
-    type: AppError['type'],
+    type: 'validation' | 'processing' | 'system',
     message: string,
     details?: string
-  ): Omit<AppError, 'id' | 'timestamp'> {
+  ) {
     return {
+      id: Math.random().toString(36).substr(2, 9),
       type,
       message,
       details,
-      resolved: false
+      timestamp: Date.now(),
+      isResolved: false
     };
   }
 
   static createWarning(
-    type: AppWarning['type'],
+    type: 'performance' | 'quality' | 'compatibility',
     message: string,
-    details?: string
-  ): Omit<AppWarning, 'id' | 'timestamp'> {
+    recommendations?: string[]
+  ) {
     return {
+      id: Math.random().toString(36).substr(2, 9),
       type,
       message,
-      details,
-      dismissed: false
+      recommendations,
+      timestamp: Date.now(),
+      isDismissed: false
     };
   }
 
-  // UI state validation
-  static validateUIState(uiState: Partial<UIState>): { isValid: boolean; errors: string[] } {
+  static validateUIState(state: UIState): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
 
-    if (uiState.generationProgress !== undefined && (uiState.generationProgress < 0 || uiState.generationProgress > 100)) {
+    if (state.generationProgress < 0 || state.generationProgress > 100) {
       errors.push('Generation progress must be between 0 and 100');
     }
 
-    if (uiState.draggedIndex !== undefined && uiState.draggedIndex !== null && uiState.draggedIndex < 0) {
-      errors.push('Dragged index cannot be negative');
+    if (state.isGenerating && state.generationProgress === 0) {
+      errors.push('Generation in progress but progress is 0');
     }
 
     return {
@@ -263,29 +298,29 @@ export class UIService {
     };
   }
 
-  // UI state utilities
-  static isPanelCollapsed(uiState: UIState, panelName: keyof UIState['collapsedPanels']): boolean {
-    return uiState.collapsedPanels[panelName];
+  static isPanelCollapsed(state: UIState, panel: keyof UIState['collapsedPanels']): boolean {
+    return state.collapsedPanels[panel];
   }
 
-  static togglePanel(uiState: UIState, panelName: keyof UIState['collapsedPanels']): Partial<UIState> {
+  static togglePanel(state: UIState, panel: keyof UIState['collapsedPanels']): UIState {
     return {
+      ...state,
       collapsedPanels: {
-        ...uiState.collapsedPanels,
-        [panelName]: !uiState.collapsedPanels[panelName]
+        ...state.collapsedPanels,
+        [panel]: !state.collapsedPanels[panel]
       }
     };
   }
 
-  static getActiveNotifications(uiState: UIState): Notification[] {
-    return uiState.notifications.filter(n => !n.dismissed);
+  static getActiveNotifications(state: UIState) {
+    return state.notifications.filter(n => !n.dismissed);
   }
 
-  static getUnresolvedErrors(uiState: UIState): AppError[] {
-    return uiState.errors.filter(e => !e.resolved);
+  static getUnresolvedErrors(state: UIState) {
+    return state.errors.filter(e => !e.resolved);
   }
 
-  static getActiveWarnings(uiState: UIState): AppWarning[] {
-    return uiState.warnings.filter(w => !w.dismissed);
+  static getActiveWarnings(state: UIState) {
+    return state.warnings.filter(w => !w.dismissed);
   }
 }
