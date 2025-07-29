@@ -141,11 +141,19 @@ export class FFmpegManager {
       const codec = isH264 ? 'libx264' : 'libvpx';
       
       // Create a concat file for more reliable input
-      const concatContent = imageFiles.map((_, i) => 
-        `file 'image_${i.toString().padStart(4, '0')}.jpg'`
+      // Each image should be displayed for 1/fps seconds
+      const imageDuration = 1 / settings.fps;
+      let concatContent = imageFiles.map((_, i) => 
+        `file 'image_${i.toString().padStart(4, '0')}.jpg'\nduration ${imageDuration}`
       ).join('\n');
+      
+      // Add the last image again without duration to ensure it's included
+      const lastImageIndex = imageFiles.length - 1;
+      concatContent += `\nfile 'image_${lastImageIndex.toString().padStart(4, '0')}.jpg'`;
+      
       await this.ffmpeg.writeFile('concat.txt', concatContent);
       console.log('📝 Created concat file:', concatContent);
+      console.log(`⏱️ Each image duration: ${imageDuration}s (${settings.fps} fps)`);
       
       // Verify concat file was written
       try {
@@ -155,14 +163,14 @@ export class FFmpegManager {
         console.error('❌ Failed to verify concat file:', e);
       }
       
-      // Use concat demuxer for more reliable processing
+      // Use concat demuxer with proper duration handling
       const baseCommand = [
         '-f', 'concat',
         '-safe', '0',
         '-i', 'concat.txt',
         '-c:v', codec,
         '-pix_fmt', 'yuv420p',
-        '-r', settings.fps.toString(), // Set frame rate
+        '-r', settings.fps.toString(), // Set output frame rate
         '-preset', 'medium',
         '-crf', '23',
         '-movflags', '+faststart', // Optimize for web playback
@@ -278,6 +286,11 @@ export class FFmpegManager {
       try {
         const videoInfo = await this.getVideoInfo('output.mp4');
         console.log('📊 Video info:', videoInfo);
+        
+        // Calculate expected duration based on input images and fps
+        const expectedDuration = imageFiles.length / settings.fps;
+        console.log(`⏱️ Expected duration: ${expectedDuration}s (${imageFiles.length} images at ${settings.fps} fps)`);
+        console.log(`⏱️ Actual duration: ${videoInfo.duration}s`);
         
         if (videoInfo.duration < 0.1) {
           throw new Error('Video duration is too short, likely invalid');
