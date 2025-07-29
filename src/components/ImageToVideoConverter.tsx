@@ -66,13 +66,6 @@ export function ImageToVideoConverter() {
       // Set generating state to true and reset progress
       setUIState({ isGenerating: true, generationProgress: 0 });
       
-      console.log('🎬 Starting video generation with:', {
-        imagesCount: images.length,
-        selectedCodec,
-        videoCodecsCount: state.videoCodecs.length,
-        settings
-      });
-      
       const video = await VideoService.generateVideo(
         images,
         settings,
@@ -162,7 +155,6 @@ export function ImageToVideoConverter() {
       <div className="text-center">
         <h1 className="text-2xl font-bold text-gray-400 mb-2">A Simple Image Sequence to Video Converter</h1>
         <p className="text-gray-600 text-sm md:text-base">Drop images, arrange them, and export as video</p>
-        <p className="text-green-600 text-sm mt-2">✅ Performance optimizations implemented successfully!</p>
       </div>
 
       {/* Upload Zone */}

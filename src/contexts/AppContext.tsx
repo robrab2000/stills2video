@@ -58,7 +58,6 @@ export function AppProvider({ children }: AppProviderProps) {
 
   // Enhanced dispatch with middleware support
   const enhancedDispatch = useCallback(async (action: AppAction) => {
-    // Temporarily disable middleware to isolate the issue
     try {
       dispatch(action);
     } catch (error) {
