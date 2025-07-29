@@ -1,8 +1,5 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": ".next",
   "framework": "nextjs",
-  "installCommand": "npm install",
   "functions": {
     "src/app/**/*.ts": {
       "maxDuration": 30
@@ -22,6 +19,5 @@
         }
       ]
     }
-  ],
-  "ignoreCommand": "echo 'Skipping build'"
+  ]
 }
