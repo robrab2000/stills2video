@@ -162,29 +162,32 @@ describe('Image Utils', () => {
       // Image is wider than canvas
       const result = calculateImageScaling(200, 100, 100, 100);
       
-      expect(result.drawWidth).toBe(100);
-      expect(result.drawHeight).toBe(50);
-      expect(result.drawX).toBe(0);
-      expect(result.drawY).toBe(25);
+      expect(result.scale).toBe(0.5);
+      expect(result.scaledWidth).toBe(100);
+      expect(result.scaledHeight).toBe(50);
+      expect(result.offsetX).toBe(0);
+      expect(result.offsetY).toBe(25);
     });
 
     test('should scale tall image correctly', () => {
       // Image is taller than canvas
       const result = calculateImageScaling(100, 200, 100, 100);
       
-      expect(result.drawWidth).toBe(50);
-      expect(result.drawHeight).toBe(100);
-      expect(result.drawX).toBe(25);
-      expect(result.drawY).toBe(0);
+      expect(result.scale).toBe(0.5);
+      expect(result.scaledWidth).toBe(50);
+      expect(result.scaledHeight).toBe(100);
+      expect(result.offsetX).toBe(25);
+      expect(result.offsetY).toBe(0);
     });
 
     test('should handle square image and canvas', () => {
       const result = calculateImageScaling(100, 100, 100, 100);
       
-      expect(result.drawWidth).toBe(100);
-      expect(result.drawHeight).toBe(100);
-      expect(result.drawX).toBe(0);
-      expect(result.drawY).toBe(0);
+      expect(result.scale).toBe(1);
+      expect(result.scaledWidth).toBe(100);
+      expect(result.scaledHeight).toBe(100);
+      expect(result.offsetX).toBe(0);
+      expect(result.offsetY).toBe(0);
     });
   });
 }); 
