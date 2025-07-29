@@ -11,7 +11,13 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
     "test:watch": "vitest --watch",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:all": "npm run test:run && npm run test:e2e",
+    "test:generate-images": "cd __tests__/test-images && node create-test-images.js"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -24,6 +30,7 @@
     "zod": "^4.0.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.1",
     "@testing-library/jest-dom": "^6.0.0",
     "@testing-library/react": "^15.0.0",
     "@testing-library/user-event": "^14.0.0",
@@ -33,6 +40,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "@vitest/ui": "^1.0.0",
     "autoprefixer": "^10.0.1",
+    "canvas": "^2.11.2",
     "eslint": "^8",
     "eslint-config-next": "15.2.4",
     "jsdom": "^23.0.0",
