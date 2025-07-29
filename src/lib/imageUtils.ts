@@ -5,6 +5,9 @@ export interface ImageFile {
   name: string;
   size: number;
   lastModified: number;
+  width?: number;
+  height?: number;
+  type: string;
 }
 
 export type SortOption = "manual" | "name" | "date" | "size";
@@ -64,6 +67,7 @@ export function createImageFile(file: File): ImageFile {
     name: file.name,
     size: file.size,
     lastModified: file.lastModified,
+    type: file.type,
   };
 }
 
@@ -101,9 +105,9 @@ export function getAvailableVideoCodecs(): VideoCodec[] {
     },
     {
       name: "H.264 (AVC1)",
-      mimeType: "video/mp4;codecs=avc1.640028",
+      mimeType: "video/mp4;codecs=avc1",
       extension: "mp4",
-      supported: MediaRecorder.isTypeSupported("video/mp4;codecs=avc1.640028")
+      supported: MediaRecorder.isTypeSupported("video/mp4;codecs=avc1")
     },
     // WebM variants
     {
@@ -120,41 +124,28 @@ export function getAvailableVideoCodecs(): VideoCodec[] {
     }
   ];
 
-  // Browser-specific H.264 support workarounds
-  if (isChrome || isEdge) {
-    // Chrome and Edge often support H.264 but might not report it correctly
-    const h264Supported = codecs.some(c => c.supported && (c.mimeType.includes('h264') || c.mimeType.includes('avc')));
-    if (!h264Supported) {
-      console.log("Chrome/Edge detected but no H.264 support reported - this might be a false negative");
-    }
-  }
-
-  if (isSafari) {
-    // Safari has limited MediaRecorder support, usually only WebM
-    console.log("Safari detected - MediaRecorder support is limited");
-  }
-
-  if (isFirefox) {
-    // Firefox typically has good WebM support but limited H.264 support in MediaRecorder
-    console.log("Firefox detected - good WebM support, limited H.264 in MediaRecorder");
-  }
-
-  // Log codec support for debugging
-  console.log("Codec support detection:", codecs.map(c => `${c.name}: ${c.supported}`));
-
+  console.log("Available codecs:", codecs.map(c => ({ name: c.name, supported: c.supported })));
   return codecs;
 }
 
 /**
- * Gets the first supported video codec
+ * Gets the first supported codec, prioritizing H.264
  */
 export function getFirstSupportedCodec(): VideoCodec | undefined {
   const codecs = getAvailableVideoCodecs();
-  return codecs.find(codec => codec.supported);
+  
+  // Prioritize H.264 variants
+  const h264Codec = codecs.find(c => 
+    c.supported && c.mimeType.includes('h264') || c.mimeType.includes('avc')
+  );
+  if (h264Codec) return h264Codec;
+  
+  // Fallback to any supported codec
+  return codecs.find(c => c.supported);
 }
 
 /**
- * Calculates image scaling to fit canvas while maintaining aspect ratio
+ * Calculates image scaling to fit within canvas dimensions
  */
 export function calculateImageScaling(
   imageWidth: number,
@@ -162,24 +153,15 @@ export function calculateImageScaling(
   canvasWidth: number,
   canvasHeight: number
 ) {
-  const imgAspect = imageWidth / imageHeight;
-  const canvasAspect = canvasWidth / canvasHeight;
+  const scaleX = canvasWidth / imageWidth;
+  const scaleY = canvasHeight / imageHeight;
+  const scale = Math.min(scaleX, scaleY);
   
-  let drawWidth, drawHeight, drawX, drawY;
-  
-  if (imgAspect > canvasAspect) {
-    // Image is wider than canvas
-    drawWidth = canvasWidth;
-    drawHeight = canvasWidth / imgAspect;
-    drawX = 0;
-    drawY = (canvasHeight - drawHeight) / 2;
-  } else {
-    // Image is taller than canvas
-    drawHeight = canvasHeight;
-    drawWidth = canvasHeight * imgAspect;
-    drawX = (canvasWidth - drawWidth) / 2;
-    drawY = 0;
-  }
-  
-  return { drawWidth, drawHeight, drawX, drawY };
+  return {
+    scale,
+    scaledWidth: imageWidth * scale,
+    scaledHeight: imageHeight * scale,
+    offsetX: (canvasWidth - imageWidth * scale) / 2,
+    offsetY: (canvasHeight - imageHeight * scale) / 2
+  };
 } 

@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import Image from "next/image";
-import { useApp } from "../contexts/AppContext";
+import { useApp, useImages, useVideos, useSettings, useUI } from "../contexts/AppContext";
 import { useImageManager } from "../hooks/useImageManager";
 import { useVideoCodecs } from "../hooks/useVideoCodecs";
 import { useVideoGenerator } from "../hooks/useVideoGenerator";
@@ -21,6 +21,12 @@ export function ImageToVideoConverter() {
   const [state, dispatch] = useApp();
   const [sortOption, setSortOption] = useState<SortOption>("manual");
 
+  // Use the new state slice hooks
+  const { images, addImages, removeImage, clearAllImages, reorderImages } = useImages();
+  const { videos, addVideo, removeVideo, clearAllVideos } = useVideos();
+  const { settings, updateSettings } = useSettings();
+  const { ui, setUIState } = useUI();
+
   // Initialize video codecs
   const { videoCodecs, selectedCodec, setSelectedCodec } = useVideoCodecs();
 
@@ -31,17 +37,12 @@ export function ImageToVideoConverter() {
     }
   }, [videoCodecs, dispatch]);
 
-  // Update selected codec in global state
-  useEffect(() => {
-    if (selectedCodec) {
-      dispatch({ type: 'UPDATE_SETTINGS', payload: { selectedCodec } });
-    }
-  }, [selectedCodec, dispatch]);
+  // Remove the problematic useEffect that was causing infinite loop
+  // The selectedCodec will be handled by the useVideoCodecs hook internally
 
-  // Image management
+  // Image management - updated to work with the new state system
   const imageManager = useImageManager(
-    state.images,
-    (newImages) => dispatch({ type: 'ADD_IMAGES', payload: newImages }),
+    images,
     sortOption,
     setSortOption
   );
@@ -49,37 +50,44 @@ export function ImageToVideoConverter() {
   // Video generation
   const videoGenerator = useVideoGenerator(
     (video) => {
-      dispatch({ type: 'ADD_GENERATED_VIDEO', payload: video });
-      dispatch({ type: 'SET_UI_STATE', payload: { videoPreview: video, showPreview: true } });
+      addVideo(video);
+      setUIState({ videoPreview: video, showPreview: true });
     },
-    (progress) => dispatch({ type: 'SET_UI_STATE', payload: { generationProgress: progress } }),
-    (isGenerating) => dispatch({ type: 'SET_UI_STATE', payload: { isGenerating } })
+    (progress) => setUIState({ generationProgress: progress }),
+    (isGenerating) => setUIState({ isGenerating })
   );
 
   // Event handlers
   const handleGenerateVideo = useCallback(async () => {
     try {
       // Set generating state to true and reset progress
-      dispatch({ type: 'SET_UI_STATE', payload: { isGenerating: true, generationProgress: 0 } });
+      setUIState({ isGenerating: true, generationProgress: 0 });
+      
+      console.log('🎬 Starting video generation with:', {
+        imagesCount: images.length,
+        selectedCodec,
+        videoCodecsCount: state.videoCodecs.length,
+        settings
+      });
       
       const video = await VideoService.generateVideo(
-        state.images,
-        state.settings,
-        state.settings.selectedCodec,
+        images,
+        settings,
+        selectedCodec, // Use selectedCodec from useVideoCodecs hook
         state.videoCodecs,
-        (progress) => dispatch({ type: 'SET_UI_STATE', payload: { generationProgress: progress } })
+        (progress) => setUIState({ generationProgress: progress })
       );
       
-      dispatch({ type: 'ADD_GENERATED_VIDEO', payload: video });
-      dispatch({ type: 'SET_UI_STATE', payload: { videoPreview: video, showPreview: true } });
+      addVideo(video);
+      setUIState({ videoPreview: video, showPreview: true });
       toast.success("Video generated successfully! Preview available.");
     } catch (error) {
       console.error("Error generating video:", error);
       toast.error("Failed to generate video");
     } finally {
-      dispatch({ type: 'SET_UI_STATE', payload: { isGenerating: false, generationProgress: 0 } });
+      setUIState({ isGenerating: false, generationProgress: 0 });
     }
-  }, [state.images, state.settings, state.videoCodecs, dispatch, state]);
+  }, [images, settings, selectedCodec, state.videoCodecs, addVideo, setUIState]);
 
   const handleDownloadVideo = useCallback((video: any) => {
     FileService.downloadVideo(video);
@@ -87,53 +95,50 @@ export function ImageToVideoConverter() {
   }, []);
 
   const handlePreviewVideo = useCallback((video: any) => {
-    dispatch({ type: 'SET_UI_STATE', payload: { videoPreview: video, showPreview: true } });
-  }, [dispatch]);
+    setUIState({ videoPreview: video, showPreview: true });
+  }, [setUIState]);
 
   const handleRemoveGeneratedVideo = useCallback((videoId: string) => {
-    dispatch({ type: 'REMOVE_GENERATED_VIDEO', payload: videoId });
+    removeVideo(videoId);
     toast.success("Video removed from list");
-  }, [dispatch]);
+  }, [removeVideo]);
 
   const handleClearAllVideos = useCallback(() => {
-    dispatch({ type: 'CLEAR_ALL_VIDEOS' });
-  }, [dispatch]);
+    clearAllVideos();
+  }, [clearAllVideos]);
 
   const handleClosePreview = useCallback(() => {
-    dispatch({ type: 'SET_UI_STATE', payload: { showPreview: false, videoPreview: null } });
-  }, [dispatch]);
+    setUIState({ showPreview: false, videoPreview: null });
+  }, [setUIState]);
 
-  const handleTogglePanel = useCallback((panel: keyof typeof state.ui.collapsedPanels) => {
-    dispatch({
-      type: 'SET_UI_STATE',
-      payload: {
-        collapsedPanels: {
-          ...state.ui.collapsedPanels,
-          [panel]: !state.ui.collapsedPanels[panel]
-        }
+  const handleTogglePanel = useCallback((panel: keyof typeof ui.collapsedPanels) => {
+    setUIState({
+      collapsedPanels: {
+        ...ui.collapsedPanels,
+        [panel]: !ui.collapsedPanels[panel]
       }
     });
-  }, [state.ui.collapsedPanels, dispatch]);
+  }, [ui.collapsedPanels, setUIState]);
 
-  const handleSettingsChange = useCallback((settings: any) => {
-    dispatch({ type: 'UPDATE_SETTINGS', payload: settings });
-  }, [dispatch]);
+  const handleSettingsChange = useCallback((newSettings: any) => {
+    updateSettings(newSettings);
+  }, [updateSettings]);
 
   const handleDragStart = useCallback((index: number) => {
-    dispatch({ type: 'SET_UI_STATE', payload: { draggedIndex: index } });
-  }, [dispatch]);
+    setUIState({ draggedIndex: index });
+  }, [setUIState]);
 
   const handleDragEnd = useCallback(() => {
-    dispatch({ type: 'SET_UI_STATE', payload: { draggedIndex: null } });
-  }, [dispatch]);
+    setUIState({ draggedIndex: null });
+  }, [setUIState]);
 
   const handleReorderImages = useCallback((fromIndex: number, toIndex: number) => {
-    dispatch({ type: 'REORDER_IMAGES', payload: { fromIndex, toIndex } });
-  }, [dispatch]);
+    reorderImages(fromIndex, toIndex);
+  }, [reorderImages]);
 
   const handleClearAllImages = useCallback(() => {
-    dispatch({ type: 'CLEAR_ALL_IMAGES' });
-  }, [dispatch]);
+    clearAllImages();
+  }, [clearAllImages]);
 
   return (
     <div className="space-y-6">
@@ -156,59 +161,59 @@ export function ImageToVideoConverter() {
         onFilesSelected={imageManager.handleFileSelect}
         onDrop={imageManager.handleDrop}
         onDragOver={imageManager.handleDragOver}
-        disabled={state.ui.isGenerating}
+        disabled={ui.isGenerating}
       />
 
       {/* Video Settings */}
       <VideoSettings
-        settings={state.settings}
+        settings={settings}
         videoCodecs={state.videoCodecs}
         sortOption={sortOption}
-        imagesCount={state.images.length}
-        isGenerating={state.ui.isGenerating}
-        generationProgress={state.ui.generationProgress}
+        imagesCount={images.length}
+        isGenerating={ui.isGenerating}
+        generationProgress={ui.generationProgress}
         onSettingsChange={handleSettingsChange}
         onSortOptionChange={imageManager.handleSortOptionChange}
         onGenerateVideo={handleGenerateVideo}
         onTogglePanel={() => handleTogglePanel('settings')}
-        isPanelCollapsed={state.ui.collapsedPanels.settings}
+        isPanelCollapsed={ui.collapsedPanels.settings}
       />
 
       {/* Generated Videos List */}
       <GeneratedVideosList
-        videos={state.generatedVideos}
+        videos={videos}
         onPreview={handlePreviewVideo}
         onDownload={handleDownloadVideo}
         onRemove={handleRemoveGeneratedVideo}
         onClearAll={handleClearAllVideos}
         onTogglePanel={() => handleTogglePanel('generatedVideos')}
-        isPanelCollapsed={state.ui.collapsedPanels.generatedVideos}
+        isPanelCollapsed={ui.collapsedPanels.generatedVideos}
       />
 
       {/* Image Grid */}
       <ImageGrid
-        images={state.images}
+        images={images}
         sortOption={sortOption}
-        draggedIndex={state.ui.draggedIndex}
-        onRemoveImage={(id) => dispatch({ type: 'REMOVE_IMAGE', payload: id })}
+        draggedIndex={ui.draggedIndex}
+        onRemoveImage={(id) => removeImage(id)}
         onClearAll={handleClearAllImages}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragOverItem={(e, index) => imageManager.handleDragOverItem(
           e, 
           index, 
-          state.ui.draggedIndex, 
+          ui.draggedIndex, 
           handleReorderImages, 
           handleDragStart
         )}
         onTogglePanel={() => handleTogglePanel('images')}
-        isPanelCollapsed={state.ui.collapsedPanels.images}
+        isPanelCollapsed={ui.collapsedPanels.images}
       />
 
       {/* Video Preview Modal */}
       <VideoPreview
-        video={state.ui.videoPreview}
-        isOpen={state.ui.showPreview}
+        video={ui.videoPreview}
+        isOpen={ui.showPreview}
         onClose={handleClosePreview}
         onDownload={handleDownloadVideo}
       />
@@ -217,8 +222,8 @@ export function ImageToVideoConverter() {
       <canvas
         ref={videoGenerator.canvasRef}
         className="hidden"
-        width={state.settings.videoWidth}
-        height={state.settings.videoHeight}
+        width={settings.videoWidth}
+        height={settings.videoHeight}
       />
     </div>
   );

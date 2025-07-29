@@ -130,10 +130,10 @@ export function useVideoGenerator(
             
             ctx.drawImage(
               img, 
-              scaling.drawX, 
-              scaling.drawY, 
-              scaling.drawWidth, 
-              scaling.drawHeight
+              scaling.offsetX, 
+              scaling.offsetY, 
+              scaling.scaledWidth, 
+              scaling.scaledHeight
             );
             resolve();
           };

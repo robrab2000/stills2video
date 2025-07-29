@@ -1,30 +1,39 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { toast } from 'sonner';
 import { ImageFile, SortOption } from '../types';
 import { FileService } from '../services/fileService';
 import { sortImages } from '../lib/imageUtils';
+import { useAppDispatch } from '../contexts/AppContext';
 
 export function useImageManager(
   images: ImageFile[],
-  onImagesChange: (images: ImageFile[]) => void,
   sortOption: SortOption,
   onSortOptionChange: (option: SortOption) => void
 ) {
+  const dispatch = useAppDispatch();
+
   const handleFileSelect = useCallback((files: FileList) => {
-    const result = FileService.processFileList(files);
-    
-    if (result.images.length > 0) {
-      const updatedImages = [...images, ...result.images];
-      onImagesChange(updatedImages);
-      toast.success(`Added ${result.images.length} images`);
+    try {
+      console.log('🖼️ handleFileSelect called with', files.length, 'files');
+      const result = FileService.processFileList(files);
+      console.log('📁 FileService result:', result);
+      
+      if (result.images.length > 0) {
+        console.log('✅ Dispatching ADD_IMAGES with', result.images.length, 'images');
+        dispatch({ type: 'ADD_IMAGES', payload: result.images });
+        toast.success(`Added ${result.images.length} images`);
+      }
+      
+      if (result.errors.length > 0) {
+        result.errors.forEach(error => {
+          toast.error(error);
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error in handleFileSelect:', error);
+      toast.error('Failed to process images');
     }
-    
-    if (result.errors.length > 0) {
-      result.errors.forEach(error => {
-        toast.error(error);
-      });
-    }
-  }, [images, onImagesChange]);
+  }, [dispatch]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -39,24 +48,27 @@ export function useImageManager(
   }, []);
 
   const handleRemoveImage = useCallback((id: string) => {
-    const updatedImages = images.filter(img => img.id !== id);
-    onImagesChange(updatedImages);
+    dispatch({ type: 'REMOVE_IMAGE', payload: id });
     toast.success("Image removed");
-  }, [images, onImagesChange]);
+  }, [dispatch]);
 
   const handleClearAllImages = useCallback(() => {
     FileService.cleanupImageUrls(images);
-    onImagesChange([]);
+    dispatch({ type: 'CLEAR_ALL_IMAGES' });
     toast.success("All images cleared");
-  }, [images, onImagesChange]);
+  }, [images, dispatch]);
 
   const handleSortOptionChange = useCallback((option: SortOption) => {
     onSortOptionChange(option);
     if (option !== 'manual') {
       const sortedImages = sortImages(images, option);
-      onImagesChange(sortedImages);
+      // For sorting, we need to replace the entire images array
+      // This is a bit of a hack since we don't have a REPLACE_IMAGES action
+      // We'll clear and re-add
+      dispatch({ type: 'CLEAR_ALL_IMAGES' });
+      dispatch({ type: 'ADD_IMAGES', payload: sortedImages });
     }
-  }, [images, onImagesChange, onSortOptionChange]);
+  }, [images, onSortOptionChange, dispatch]);
 
   const handleDragOverItem = useCallback((
     e: React.DragEvent,

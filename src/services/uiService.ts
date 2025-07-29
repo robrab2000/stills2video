@@ -1,19 +1,6 @@
-import { VideoPreview, VideoSettings } from '../types';
+import { VideoPreview, VideoSettings, UIState, Notification, AppError, AppWarning } from '../types';
 import { FileService } from './fileService';
 import { CodecService } from './codecService';
-
-export interface UIState {
-  isGenerating: boolean;
-  generationProgress: number;
-  showPreview: boolean;
-  videoPreview: VideoPreview | null;
-  draggedIndex: number | null;
-  collapsedPanels: {
-    settings: boolean;
-    images: boolean;
-    generatedVideos: boolean;
-  };
-}
 
 export interface ToastMessage {
   id: string;
@@ -34,7 +21,10 @@ export class UIService {
         settings: false,
         images: false,
         generatedVideos: false
-      }
+      },
+      notifications: [],
+      errors: [],
+      warnings: []
     };
   }
 
@@ -53,8 +43,8 @@ export class UIService {
     }
 
     // Calculate optimal dimensions based on image sizes
-    const avgWidth = images.reduce((sum, img) => sum + img.width, 0) / images.length;
-    const avgHeight = images.reduce((sum, img) => sum + img.height, 0) / images.length;
+    const avgWidth = images.reduce((sum, img) => sum + (img.width || 1920), 0) / images.length;
+    const avgHeight = images.reduce((sum, img) => sum + (img.height || 1080), 0) / images.length;
 
     // Round to nearest 16 for better encoding
     const optimalWidth = Math.round(avgWidth / 16) * 16;
@@ -214,5 +204,88 @@ export class UIService {
       estimatedSize,
       processingTime
     };
+  }
+
+  // Enhanced notification and error management
+  static createNotification(
+    type: Notification['type'],
+    message: string,
+    duration?: number
+  ): Omit<Notification, 'id' | 'timestamp'> {
+    return {
+      type,
+      message,
+      duration
+    };
+  }
+
+  static createError(
+    type: AppError['type'],
+    message: string,
+    details?: string
+  ): Omit<AppError, 'id' | 'timestamp'> {
+    return {
+      type,
+      message,
+      details,
+      resolved: false
+    };
+  }
+
+  static createWarning(
+    type: AppWarning['type'],
+    message: string,
+    details?: string
+  ): Omit<AppWarning, 'id' | 'timestamp'> {
+    return {
+      type,
+      message,
+      details,
+      dismissed: false
+    };
+  }
+
+  // UI state validation
+  static validateUIState(uiState: Partial<UIState>): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    if (uiState.generationProgress !== undefined && (uiState.generationProgress < 0 || uiState.generationProgress > 100)) {
+      errors.push('Generation progress must be between 0 and 100');
+    }
+
+    if (uiState.draggedIndex !== undefined && uiState.draggedIndex !== null && uiState.draggedIndex < 0) {
+      errors.push('Dragged index cannot be negative');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  // UI state utilities
+  static isPanelCollapsed(uiState: UIState, panelName: keyof UIState['collapsedPanels']): boolean {
+    return uiState.collapsedPanels[panelName];
+  }
+
+  static togglePanel(uiState: UIState, panelName: keyof UIState['collapsedPanels']): Partial<UIState> {
+    return {
+      collapsedPanels: {
+        ...uiState.collapsedPanels,
+        [panelName]: !uiState.collapsedPanels[panelName]
+      }
+    };
+  }
+
+  static getActiveNotifications(uiState: UIState): Notification[] {
+    return uiState.notifications.filter(n => !n.dismissed);
+  }
+
+  static getUnresolvedErrors(uiState: UIState): AppError[] {
+    return uiState.errors.filter(e => !e.resolved);
+  }
+
+  static getActiveWarnings(uiState: UIState): AppWarning[] {
+    return uiState.warnings.filter(w => !w.dismissed);
   }
 }

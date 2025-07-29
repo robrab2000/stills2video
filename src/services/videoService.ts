@@ -93,6 +93,13 @@ export class VideoService {
   ): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
 
+    console.log('🔍 Validating video generation inputs:', {
+      imagesCount: images.length,
+      selectedCodec,
+      videoCodecsCount: videoCodecs.length,
+      availableCodecs: videoCodecs.map(c => ({ name: c.name, mimeType: c.mimeType, supported: c.supported }))
+    });
+
     // Validate images
     if (images.length === 0) {
       errors.push("At least one image is required");
@@ -113,6 +120,8 @@ export class VideoService {
     if (!codecValidation.isValid) {
       errors.push(...codecValidation.errors);
     }
+
+    console.log('✅ Validation result:', { isValid: errors.length === 0, errors });
 
     return {
       isValid: errors.length === 0,
@@ -254,10 +263,10 @@ export class VideoService {
           
           ctx.drawImage(
             img, 
-            scaling.drawX, 
-            scaling.drawY, 
-            scaling.drawWidth, 
-            scaling.drawHeight
+            scaling.offsetX, 
+            scaling.offsetY, 
+            scaling.scaledWidth, 
+            scaling.scaledHeight
           );
           resolve();
         };
