@@ -1,5 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+"use client";
+
+import { useEffect, useState } from 'react';
 import { getMemoryInfo } from '../../lib/performanceUtils';
+import { VideoService } from '../../services/videoService';
+import { isMultithreadingAvailable } from '../../lib/ffmpegWorkerManager';
+import { shouldEnableFFmpegMultithreading, getOptimalThreadCount, getFFmpegManager } from '../../lib/ffmpegUtils';
 
 interface PerformanceMonitorProps {
   enabled?: boolean;
@@ -15,11 +20,23 @@ export function PerformanceMonitor({
     memory: any;
     renderTime: number;
     longTasks: number;
+    multithreading: {
+      enabled: boolean;
+      available: boolean;
+      optimalThreads: number;
+      ffmpegReady: boolean;
+    };
   }>({
     fps: 0,
     memory: null,
     renderTime: 0,
-    longTasks: 0
+    longTasks: 0,
+    multithreading: {
+      enabled: false,
+      available: false,
+      optimalThreads: 1,
+      ffmpegReady: false,
+    }
   });
 
   const [isVisible, setIsVisible] = useState(false);
@@ -88,112 +105,146 @@ export function PerformanceMonitor({
     return () => clearInterval(interval);
   }, [enabled]);
 
+  // Multithreading status monitoring
+  useEffect(() => {
+    if (!enabled) return;
+
+    const updateMultithreadingStatus = () => {
+      const multithreading = {
+        enabled: shouldEnableFFmpegMultithreading(),
+        available: isMultithreadingAvailable(),
+        optimalThreads: getOptimalThreadCount(),
+        ffmpegReady: getFFmpegManager().isFFmpegLoaded(),
+      };
+      
+      setMetrics(prev => ({ ...prev, multithreading }));
+    };
+
+    updateMultithreadingStatus();
+    const interval = setInterval(updateMultithreadingStatus, 5000);
+
+    return () => clearInterval(interval);
+  }, [enabled]);
+
   // Render time monitoring
   useEffect(() => {
     if (!enabled) return;
 
     const startTime = performance.now();
     
-    const updateRenderTime = () => {
-      const renderTime = performance.now() - startTime;
+    return () => {
+      const endTime = performance.now();
+      const renderTime = endTime - startTime;
       setMetrics(prev => ({ ...prev, renderTime }));
     };
-
-    // Update render time after a short delay to measure initial render
-    const timeout = setTimeout(updateRenderTime, 100);
-
-    return () => clearTimeout(timeout);
   }, [enabled]);
-
-  // Toggle visibility
-  const toggleVisibility = useCallback(() => {
-    setIsVisible(prev => !prev);
-  }, []);
 
   if (!enabled) return null;
 
+  const getPerformanceColor = (value: number, thresholds: { good: number; warning: number }) => {
+    if (value <= thresholds.good) return 'text-green-500';
+    if (value <= thresholds.warning) return 'text-yellow-500';
+    return 'text-red-500';
+  };
+
+  const getMultithreadingStatus = () => {
+    const { enabled, available, optimalThreads, ffmpegReady } = metrics.multithreading;
+    
+    if (!enabled) return { status: 'Disabled', color: 'text-gray-500' };
+    if (!available) return { status: 'Unavailable', color: 'text-red-500' };
+    if (!ffmpegReady) return { status: 'FFmpeg Loading', color: 'text-yellow-500' };
+    return { status: `Active (${optimalThreads} threads)`, color: 'text-green-500' };
+  };
+
+  const multithreadingStatus = getMultithreadingStatus();
+
   return (
-    <>
-      {/* Toggle button */}
+    <div className="fixed bottom-4 right-4 z-50">
+      {/* Toggle Button */}
       <button
-        onClick={toggleVisibility}
-        className="fixed bottom-4 right-4 z-50 bg-gray-800 text-white p-2 rounded-full shadow-lg hover:bg-gray-700 transition-colors"
+        onClick={() => setIsVisible(!isVisible)}
+        className="bg-blue-600 hover:bg-blue-700 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg"
         title="Performance Monitor"
       >
         📊
       </button>
 
-      {/* Performance panel */}
+      {/* Performance Dashboard */}
       {isVisible && (
-        <div className="fixed bottom-16 right-4 z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-4 min-w-64">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="text-sm font-semibold text-gray-800">Performance Monitor</h3>
+        <div className="absolute bottom-16 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4 min-w-80">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+              Performance Monitor
+            </h3>
             <button
-              onClick={toggleVisibility}
-              className="text-gray-500 hover:text-gray-700 text-lg"
+              onClick={() => setIsVisible(false)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
-              ×
+              ✕
             </button>
           </div>
 
-          <div className="space-y-2 text-xs">
-            {/* FPS */}
-            <div className="flex justify-between">
-              <span className="text-gray-600">FPS:</span>
-              <span className={`font-mono ${metrics.fps < 30 ? 'text-red-600' : metrics.fps < 50 ? 'text-yellow-600' : 'text-green-600'}`}>
+          {/* Basic Metrics */}
+          <div className="space-y-2 mb-4">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-600 dark:text-gray-400">FPS:</span>
+              <span className={`text-xs font-mono ${getPerformanceColor(metrics.fps, { good: 55, warning: 30 })}`}>
                 {metrics.fps}
               </span>
             </div>
 
-            {/* Memory Usage */}
-            {metrics.memory && (
-              <div className="flex justify-between">
-                <span className="text-gray-600">Memory:</span>
-                <span className={`font-mono ${metrics.memory.percentage > 80 ? 'text-red-600' : metrics.memory.percentage > 60 ? 'text-yellow-600' : 'text-green-600'}`}>
-                  {metrics.memory.percentage.toFixed(1)}%
-                </span>
-              </div>
-            )}
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-600 dark:text-gray-400">Memory:</span>
+              <span className={`text-xs font-mono ${getPerformanceColor(metrics.memory?.usedJSHeapSize || 0, { good: 50 * 1024 * 1024, warning: 100 * 1024 * 1024 })}`}>
+                {metrics.memory ? `${Math.round(metrics.memory.usedJSHeapSize / (1024 * 1024))}MB` : 'N/A'}
+              </span>
+            </div>
 
-            {/* Render Time */}
-            <div className="flex justify-between">
-              <span className="text-gray-600">Render:</span>
-              <span className={`font-mono ${metrics.renderTime > 16 ? 'text-red-600' : metrics.renderTime > 8 ? 'text-yellow-600' : 'text-green-600'}`}>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-600 dark:text-gray-400">Render Time:</span>
+              <span className={`text-xs font-mono ${getPerformanceColor(metrics.renderTime, { good: 16, warning: 33 })}`}>
                 {metrics.renderTime.toFixed(1)}ms
               </span>
             </div>
 
-            {/* Long Tasks */}
-            <div className="flex justify-between">
-              <span className="text-gray-600">Long Tasks:</span>
-              <span className={`font-mono ${metrics.longTasks > 5 ? 'text-red-600' : metrics.longTasks > 2 ? 'text-yellow-600' : 'text-green-600'}`}>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-600 dark:text-gray-400">Long Tasks:</span>
+              <span className={`text-xs font-mono ${getPerformanceColor(metrics.longTasks, { good: 0, warning: 2 })}`}>
                 {metrics.longTasks}
               </span>
             </div>
+          </div>
 
-            {/* Detailed Memory Info */}
-            {showDetails && metrics.memory && (
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <div className="text-xs text-gray-500 space-y-1">
-                  <div>Used: {(metrics.memory.used / 1024 / 1024).toFixed(1)} MB</div>
-                  <div>Total: {(metrics.memory.total / 1024 / 1024).toFixed(1)} MB</div>
-                  <div>Limit: {(metrics.memory.limit / 1024 / 1024).toFixed(1)} MB</div>
-                </div>
+          {/* Multithreading Status */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs text-gray-600 dark:text-gray-400">Multithreading:</span>
+              <span className={`text-xs font-mono ${multithreadingStatus.color}`}>
+                {multithreadingStatus.status}
+              </span>
+            </div>
+
+            {showDetails && (
+              <div className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                <div>• Hardware Concurrency: {navigator.hardwareConcurrency || 'Unknown'}</div>
+                <div>• Web Workers: {typeof Worker !== 'undefined' ? 'Available' : 'Unavailable'}</div>
+                <div>• SharedArrayBuffer: {typeof SharedArrayBuffer !== 'undefined' ? 'Available' : 'Unavailable'}</div>
+                <div>• FFmpeg Ready: {metrics.multithreading.ffmpegReady ? 'Yes' : 'No'}</div>
               </div>
             )}
           </div>
 
-          {/* Performance indicators */}
-          <div className="mt-3 pt-3 border-t border-gray-200">
-            <div className="flex space-x-1">
-              <div className={`w-3 h-3 rounded-full ${metrics.fps >= 50 ? 'bg-green-500' : metrics.fps >= 30 ? 'bg-yellow-500' : 'bg-red-500'}`} title="FPS"></div>
-              <div className={`w-3 h-3 rounded-full ${metrics.memory?.percentage <= 60 ? 'bg-green-500' : metrics.memory?.percentage <= 80 ? 'bg-yellow-500' : 'bg-red-500'}`} title="Memory"></div>
-              <div className={`w-3 h-3 rounded-full ${metrics.renderTime <= 8 ? 'bg-green-500' : metrics.renderTime <= 16 ? 'bg-yellow-500' : 'bg-red-500'}`} title="Render Time"></div>
-              <div className={`w-3 h-3 rounded-full ${metrics.longTasks <= 2 ? 'bg-green-500' : metrics.longTasks <= 5 ? 'bg-yellow-500' : 'bg-red-500'}`} title="Long Tasks"></div>
+          {/* Performance Indicators */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
+            <div className="flex space-x-2">
+              <div className={`w-3 h-3 rounded-full ${getPerformanceColor(metrics.fps, { good: 55, warning: 30 })}`}></div>
+              <div className={`w-3 h-3 rounded-full ${getPerformanceColor(metrics.memory?.usedJSHeapSize || 0, { good: 50 * 1024 * 1024, warning: 100 * 1024 * 1024 })}`}></div>
+              <div className={`w-3 h-3 rounded-full ${getPerformanceColor(metrics.renderTime, { good: 16, warning: 33 })}`}></div>
+              <div className={`w-3 h-3 rounded-full ${multithreadingStatus.color}`}></div>
             </div>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import { ImageToVideoConverter } from '../components/ImageToVideoConverter';
+import { PerformanceMonitor } from '../components/ui/PerformanceMonitor';
 
 export default function Home() {
   return (
@@ -44,6 +45,12 @@ export default function Home() {
           </a>
         </span>
       </footer>
+
+      {/* Performance Monitor - Development Only */}
+      <PerformanceMonitor 
+        enabled={process.env.NODE_ENV === 'development'} 
+        showDetails={false}
+      />
     </div>
   );
 } 

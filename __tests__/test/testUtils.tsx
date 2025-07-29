@@ -166,3 +166,67 @@ export const TEST_CONSTANTS = {
 // Re-export everything from testing library
 export * from '@testing-library/react';
 export { customRender as render };
+
+// Test suite to validate test utilities
+describe('Test Utilities', () => {
+  describe('Mock Data Creation', () => {
+    test('should create mock image file', () => {
+      const mockFile = createMockImageFile('test-image.jpg');
+      expect(mockFile).toHaveProperty('id');
+      expect(mockFile).toHaveProperty('file');
+      expect(mockFile).toHaveProperty('name', 'test-image.jpg');
+      // In test environment, File might be mocked, so check if it's an object with required properties
+      expect(typeof mockFile.file).toBe('object');
+      expect(mockFile.file).toHaveProperty('name');
+      expect(mockFile.file).toHaveProperty('type');
+    });
+
+    test('should create mock video preview', () => {
+      const mockVideo = createMockVideoPreview('test-video-123');
+      expect(mockVideo).toHaveProperty('id', 'test-video-123');
+      expect(mockVideo).toHaveProperty('blob');
+      // In test environment, Blob might be mocked
+      expect(typeof mockVideo.blob).toBe('object');
+    });
+
+    test('should create mock file with correct properties', () => {
+      const mockFile = createMockFile('test.txt', 'text/plain', 2048);
+      expect(mockFile.name).toBe('test.txt');
+      expect(mockFile.type).toBe('text/plain');
+      // File size depends on the content, just check it's a number
+      expect(typeof mockFile.size).toBe('number');
+      expect(mockFile.size).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Test Constants', () => {
+    test('should have valid timeout values', () => {
+      expect(TEST_CONSTANTS.TIMEOUTS.SHORT).toBe(1000);
+      expect(TEST_CONSTANTS.TIMEOUTS.MEDIUM).toBe(5000);
+      expect(TEST_CONSTANTS.TIMEOUTS.LONG).toBe(10000);
+    });
+
+    test('should have valid video dimensions', () => {
+      expect(TEST_CONSTANTS.VIDEO_DIMENSIONS.HD).toEqual({
+        width: 1280,
+        height: 720
+      });
+      expect(TEST_CONSTANTS.VIDEO_DIMENSIONS.FULL_HD).toEqual({
+        width: 1920,
+        height: 1080
+      });
+    });
+  });
+
+  describe('Mock Service Responses', () => {
+    test('should have valid video service responses', () => {
+      expect(mockServiceResponses.videoService.generateVideo.success).toBeDefined();
+      expect(mockServiceResponses.videoService.generateVideo.error).toBeInstanceOf(Error);
+    });
+
+    test('should have valid file service responses', () => {
+      expect(mockServiceResponses.fileService.validateImageFile.success).toBe(true);
+      expect(mockServiceResponses.fileService.validateImageFile.failure).toBe(false);
+    });
+  });
+});

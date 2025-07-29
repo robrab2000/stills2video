@@ -17,10 +17,20 @@ import { VideoSettings } from "./ui/VideoSettings";
 import { LazyVideoPreview } from "./ui/LazyVideoPreview";
 import { GeneratedVideosList } from "./ui/GeneratedVideosList";
 import { SortOption } from "../types";
+import { shouldEnableFFmpegMultithreading, isMultithreadingAvailable } from '../lib/ffmpegUtils';
 
 export function ImageToVideoConverter() {
   const [state, dispatch] = useApp();
   const [sortOption, setSortOption] = useState<SortOption>("manual");
+  const [multithreadingStatus, setMultithreadingStatus] = useState<{
+    enabled: boolean;
+    available: boolean;
+    active: boolean;
+  }>({
+    enabled: false,
+    available: false,
+    active: false
+  });
 
   // Use the new state slice hooks
   const { images, addImages, removeImage, clearAllImages, reorderImages } = useImages();
@@ -37,6 +47,48 @@ export function ImageToVideoConverter() {
       dispatch({ type: 'SET_VIDEO_CODECS', payload: videoCodecs });
     }
   }, [videoCodecs, dispatch]);
+
+  // Check multithreading status
+  useEffect(() => {
+    const checkMultithreadingStatus = () => {
+      const enabled = shouldEnableFFmpegMultithreading();
+      const available = isMultithreadingAvailable();
+      
+      setMultithreadingStatus({
+        enabled,
+        available,
+        active: enabled && available
+      });
+    };
+
+    const initializeWorker = async () => {
+      try {
+        // Pre-initialize the FFmpeg worker to ensure it's ready when needed
+        const { ffmpegWorkerManager } = await import('../lib/ffmpegWorkerManager');
+        await ffmpegWorkerManager.initialize();
+        console.log('🔧 FFmpeg worker pre-initialized');
+      } catch (error) {
+        console.warn('⚠️ Failed to pre-initialize FFmpeg worker:', error);
+        // Worker failed to initialize, will fall back to main thread
+      }
+    };
+
+    checkMultithreadingStatus();
+    
+    // Initialize worker and check status again
+    initializeWorker().then(() => {
+      // Check status again after initialization
+      setTimeout(checkMultithreadingStatus, 1000);
+    }).catch(() => {
+      // Worker failed, check status anyway
+      setTimeout(checkMultithreadingStatus, 1000);
+    });
+    
+    // Check again after a delay to allow FFmpeg to load
+    const timer = setTimeout(checkMultithreadingStatus, 3000);
+    
+    return () => clearTimeout(timer);
+  }, []);
 
   // Image management - updated to work with the new state system
   const imageManager = useImageManager(
@@ -62,7 +114,19 @@ export function ImageToVideoConverter() {
 
   // Memoize event handlers
   const handleGenerateVideo = useCallback(async () => {
+    if (images.length === 0) {
+      toast.error("Please add some images first");
+      return;
+    }
+
     try {
+      // Log multithreading status before generation
+      console.log('🎬 Starting video generation with multithreading:', {
+        enabled: multithreadingStatus.enabled,
+        available: multithreadingStatus.available,
+        active: multithreadingStatus.active
+      });
+
       // Set generating state to true and reset progress
       setUIState({ isGenerating: true, generationProgress: 0 });
       
@@ -83,7 +147,7 @@ export function ImageToVideoConverter() {
     } finally {
       setUIState({ isGenerating: false, generationProgress: 0 });
     }
-  }, [images, settings, selectedCodec, state.videoCodecs, addVideo, setUIState]);
+  }, [images, settings, selectedCodec, state.videoCodecs, addVideo, setUIState, multithreadingStatus]);
 
   const handleDownloadVideo = useCallback((video: any) => {
     FileService.downloadVideo(video);
@@ -155,6 +219,35 @@ export function ImageToVideoConverter() {
       <div className="text-center">
         <h1 className="text-2xl font-bold text-gray-400 mb-2">A Simple Image Sequence to Video Converter</h1>
         <p className="text-gray-600 text-sm md:text-base">Drop images, arrange them, and export as video</p>
+      </div>
+
+      {/* Multithreading Status Indicator */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className={`w-3 h-3 rounded-full ${multithreadingStatus.active ? 'bg-green-500' : multithreadingStatus.enabled && !multithreadingStatus.available ? 'bg-yellow-500' : 'bg-gray-400'}`}></div>
+            <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+              {multithreadingStatus.active ? 'Multithreaded Processing' : 
+               multithreadingStatus.enabled && !multithreadingStatus.available ? 'Hybrid Processing' :
+               'Single-threaded Processing'}
+            </span>
+          </div>
+          <div className="text-xs text-blue-700 dark:text-blue-300">
+            {multithreadingStatus.enabled && multithreadingStatus.available ? (
+              '🚀 Using multiple CPU cores'
+            ) : multithreadingStatus.enabled && !multithreadingStatus.available ? (
+              '🔄 Worker ready, using main thread for FFmpeg'
+            ) : (
+              'ℹ️ Single-threaded mode'
+            )}
+          </div>
+        </div>
+        {!multithreadingStatus.active && (
+          <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
+            {!multithreadingStatus.enabled && 'Multithreading disabled for this browser/device'}
+            {multithreadingStatus.enabled && !multithreadingStatus.available && 'Worker communication available, FFmpeg uses main thread for compatibility'}
+          </div>
+        )}
       </div>
 
       {/* Upload Zone */}

@@ -36,6 +36,8 @@ export interface VideoPreview {
   thumbnailUrl?: string;
   size?: number;
   duration?: number;
+  format?: string;
+  codec?: string;
   settings?: VideoSettings;
 }
 

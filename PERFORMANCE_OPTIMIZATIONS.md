@@ -4,10 +4,11 @@ This document outlines the comprehensive performance optimizations implemented i
 
 ## 📊 Overview
 
-The performance optimizations focus on three main areas:
+The performance optimizations focus on four main areas:
 1. **Memoization** - Preventing unnecessary re-renders and calculations
 2. **Lazy Loading** - Loading components and resources only when needed
 3. **Virtual Scrolling** - Efficiently rendering large datasets
+4. **Multithreading** - Parallel processing for FFmpeg operations
 
 ## 🎯 Key Optimizations Implemented
 
@@ -87,7 +88,55 @@ const shouldUseVirtualGrid = useMemo(() => {
 - **Rendering**: Only renders visible items
 - **Scrolling**: Smooth 60fps scrolling even with 1000+ images
 
-### 4. Performance Monitoring
+### 4. Multithreading for FFmpeg Operations
+
+#### **Browser Capabilities Detection**
+- Automatic detection of Web Workers, SharedArrayBuffer, and Atomics support
+- Hardware concurrency detection for optimal thread count
+- Browser-specific optimization flags
+- Memory-constrained device detection
+
+```typescript
+const capabilities = detectBrowserCapabilities();
+const optimalThreads = getOptimalThreadCount();
+const shouldEnable = shouldEnableFFmpegMultithreading();
+```
+
+#### **FFmpeg Web Worker Implementation**
+- Dedicated web worker for FFmpeg operations
+- Automatic fallback to main thread if worker fails
+- Progress reporting and error handling
+- Memory-efficient file cleanup
+
+```typescript
+// Use multithreaded processing when available
+const videoBlob = await generateVideoWithMultithreading(imageFiles, settings, onProgress);
+```
+
+#### **Optimized FFmpeg Commands**
+- Browser-specific optimization flags
+- Dynamic thread count based on hardware
+- Memory optimization for constrained devices
+- Quality vs. performance balancing
+
+```typescript
+// Chrome: Best quality
+['-threads', '8', '-cpu-used', '0']
+
+// Firefox: Balanced performance
+['-threads', '8', '-cpu-used', '1']
+
+// Safari: Conservative settings
+['-threads', '8', '-cpu-used', '2']
+```
+
+#### **Performance Benefits**
+- **Parallel Processing**: Utilizes multiple CPU cores
+- **Non-blocking UI**: FFmpeg operations run in background
+- **Better Responsiveness**: Main thread remains free for UI updates
+- **Scalable Performance**: Automatically adapts to hardware capabilities
+
+### 5. Performance Monitoring
 
 #### **usePerformanceMonitor Hook**
 - Real-time render time tracking
@@ -95,14 +144,24 @@ const shouldUseVirtualGrid = useMemo(() => {
 - Frame rate monitoring
 - Long task detection
 - Layout shift monitoring
+- **Multithreading status monitoring**
 
 #### **PerformanceMonitor Component**
 - Development-only performance dashboard
 - Real-time metrics display
 - Color-coded performance indicators
 - Toggle visibility for debugging
+- **Multithreading status display**
 
-### 5. Utility Optimizations
+```typescript
+// Shows multithreading status
+Multithreading: Active (8 threads) ✅
+Hardware Concurrency: 8
+Web Workers: Available
+FFmpeg Ready: Yes
+```
+
+### 6. Utility Optimizations
 
 #### **Performance Utils**
 - **Debouncing**: Prevents excessive function calls
@@ -132,6 +191,8 @@ export function chunkArray<T>(array: T[], chunkSize: number): T[][]
 - Video preview loaded immediately on app start
 - No memory usage monitoring
 - Excessive re-renders on state changes
+- **FFmpeg operations blocked main thread**
+- **Single-threaded video processing**
 
 ### **After Optimizations**
 - **Smooth 60fps** scrolling with 1000+ images
@@ -139,6 +200,9 @@ export function chunkArray<T>(array: T[], chunkSize: number): T[][]
 - **Memory efficient** virtual scrolling
 - **Real-time monitoring** for performance debugging
 - **Optimized re-renders** with memoization
+- **Multithreaded FFmpeg processing** for faster video generation
+- **Non-blocking UI** during video operations
+- **Automatic hardware optimization** based on device capabilities
 
 ## 🛠️ Implementation Details
 
@@ -148,22 +212,32 @@ src/components/ui/
 ├── LazyVideoPreview.tsx      # Lazy-loaded video preview
 ├── VirtualImageGrid.tsx      # Virtual scrolling for large grids
 ├── ImageGridItem.tsx         # Memoized grid item
-├── PerformanceMonitor.tsx    # Performance dashboard
+├── PerformanceMonitor.tsx    # Performance dashboard with multithreading status
 └── [existing components]     # Optimized with memoization
+```
+
+### **Multithreading Architecture**
+```
+src/lib/
+├── browserCapabilities.ts    # Browser feature detection
+├── ffmpegWorker.ts          # FFmpeg web worker implementation
+├── ffmpegWorkerManager.ts   # Worker communication manager
+├── ffmpegUtils.ts           # Enhanced with multithreading support
+└── [existing utils]         # Enhanced with optimizations
 ```
 
 ### **Hooks**
 ```
 src/hooks/
-├── usePerformanceMonitor.ts  # Performance tracking
+├── usePerformanceMonitor.ts  # Performance tracking with multithreading
 └── [existing hooks]          # Optimized with useCallback
 ```
 
-### **Utilities**
+### **Services**
 ```
-src/lib/
-├── performanceUtils.ts       # Performance utilities
-└── [existing utils]          # Enhanced with optimizations
+src/services/
+├── videoService.ts          # Enhanced with multithreading support
+└── [existing services]      # Enhanced with optimizations
 ```
 
 ## 🎯 Usage Examples
@@ -184,13 +258,33 @@ src/lib/
 )}
 ```
 
+### **Multithreaded Video Generation**
+```typescript
+// Automatically uses multithreading when available
+const video = await VideoService.generateVideo(
+  images,
+  settings,
+  selectedCodec,
+  videoCodecs,
+  onProgress
+);
+```
+
 ### **Performance Monitoring**
 ```typescript
-// Development only
+// Development only - shows multithreading status
 <PerformanceMonitor 
   enabled={process.env.NODE_ENV === 'development'} 
   showDetails={false}
 />
+```
+
+### **Browser Capabilities**
+```typescript
+// Check multithreading availability
+const capabilities = detectBrowserCapabilities();
+console.log(`Multithreading: ${capabilities.ffmpegMultithreading}`);
+console.log(`Optimal threads: ${getOptimalThreadCount()}`);
 ```
 
 ### **Memoized Components**
@@ -213,13 +307,17 @@ src/lib/
 - **Before**: O(n) render time for image grids
 - **After**: O(1) render time with virtual scrolling
 
+### **Video Processing**
+- **Before**: Single-threaded, blocking UI
+- **After**: Multithreaded, non-blocking with automatic optimization
+
 ### **Bundle Size**
 - **Before**: All components loaded upfront
 - **After**: Lazy loading reduces initial bundle
 
 ### **User Experience**
-- **Before**: Laggy scrolling with large collections
-- **After**: Smooth 60fps scrolling regardless of collection size
+- **Before**: Laggy scrolling with large collections, blocked UI during video generation
+- **After**: Smooth 60fps scrolling regardless of collection size, responsive UI during processing
 
 ## 🔧 Configuration
 
@@ -229,6 +327,15 @@ src/lib/
 const shouldUseVirtualGrid = useMemo(() => {
   return images.length > 50; // Configurable threshold
 }, [images.length]);
+```
+
+### **Multithreading Configuration**
+```typescript
+// Enable/disable multithreading
+const useMultithreading = shouldEnableFFmpegMultithreading() && isMultithreadingAvailable();
+
+// Configure thread count
+const optimalThreads = getOptimalThreadCount(); // Auto-detected
 ```
 
 ### **Performance Monitoring**
@@ -253,6 +360,12 @@ batchProcess(items, processor, batchSize = 10, delay = 16)
 - Items with complex rendering
 - Performance-critical applications
 
+### **Multithreading Guidelines**
+- Automatically enabled when browser supports it
+- Falls back gracefully to main thread if worker fails
+- Monitor performance with PerformanceMonitor component
+- Consider device memory constraints
+
 ### **Memoization Guidelines**
 - Use `useMemo` for expensive calculations
 - Use `useCallback` for event handlers passed to children
@@ -268,6 +381,7 @@ batchProcess(items, processor, batchSize = 10, delay = 16)
 ### **Performance Monitor**
 - Click the 📊 button in development mode
 - Monitor FPS, memory, render time, and long tasks
+- **Check multithreading status and thread count**
 - Use color-coded indicators for quick assessment
 
 ### **Console Logging**
@@ -277,6 +391,9 @@ usePerformanceMonitor({
   componentName: 'MyComponent',
   logToConsole: true
 });
+
+// Log browser capabilities
+logBrowserCapabilities();
 ```
 
 ### **Memory Profiling**
@@ -287,13 +404,23 @@ const memory = getMemoryInfo();
 console.log('Memory usage:', memory);
 ```
 
+### **Multithreading Debugging**
+```typescript
+// Check multithreading status
+import { VideoService } from '../services/videoService';
+const perfInfo = VideoService.getPerformanceInfo();
+console.log('Performance info:', perfInfo);
+```
+
 ## 📚 Additional Resources
 
 - [React Performance Optimization](https://react.dev/learn/render-and-commit)
 - [Virtual Scrolling Best Practices](https://developers.google.com/web/updates/2016/07/infinite-scroller)
 - [Memory Management in Web Apps](https://web.dev/memory-management/)
 - [Performance Monitoring APIs](https://developer.mozilla.org/en-US/docs/Web/API/Performance)
+- [Web Workers API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API)
+- [FFmpeg Multithreading](https://ffmpeg.org/ffmpeg.html#Threading)
 
 ---
 
-This comprehensive performance optimization implementation ensures the Stills-2-Video application can handle large image collections efficiently while maintaining a smooth user experience.
+This comprehensive performance optimization implementation ensures the Stills-2-Video application can handle large image collections efficiently while maintaining a smooth user experience, with the added benefit of multithreaded video processing for significantly improved performance.

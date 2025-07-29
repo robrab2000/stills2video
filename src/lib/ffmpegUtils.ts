@@ -1,5 +1,14 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { 
+  shouldEnableFFmpegMultithreading, 
+  getOptimalThreadCount, 
+  getFFmpegOptimizationFlags,
+  createOptimizedFFmpegCommand,
+  logBrowserCapabilities,
+  detectBrowserCapabilities 
+} from './browserCapabilities';
+import { isMultithreadingAvailable, ffmpegWorkerManager } from './ffmpegWorkerManager';
 
 export interface FFmpegCodec {
   name: string;
@@ -12,6 +21,18 @@ export class FFmpegManager {
   private ffmpeg: FFmpeg | null = null;
   private isLoaded = false;
   private isLoading = false;
+  private multithreadingEnabled: boolean | null = null;
+
+  constructor() {
+    // Don't call browser capabilities during construction to avoid initialization issues
+  }
+
+  private getMultithreadingEnabled(): boolean {
+    if (this.multithreadingEnabled === null) {
+      this.multithreadingEnabled = shouldEnableFFmpegMultithreading();
+    }
+    return this.multithreadingEnabled;
+  }
 
   async load(): Promise<void> {
     if (this.isLoaded) return;
@@ -37,6 +58,7 @@ export class FFmpegManager {
 
       this.isLoaded = true;
       console.log('FFmpeg loaded successfully');
+      console.log(`Multithreading enabled: ${this.getMultithreadingEnabled()}`);
     } catch (error) {
       console.error('FFmpeg loading failed:', error);
       this.ffmpeg = null;
@@ -107,8 +129,8 @@ export class FFmpegManager {
       const outputFormat = isH264 ? 'mp4' : 'webm';
       const codec = isH264 ? 'libx264' : (settings.codec.includes('vp9') ? 'libvpx-vp9' : 'libvpx');
 
-      // Build FFmpeg command
-      const command = [
+      // Build base FFmpeg command
+      const baseCommand = [
         '-f', 'concat',
         '-safe', '0',
         '-i', 'input.txt',
@@ -120,13 +142,19 @@ export class FFmpegManager {
         `output.${outputFormat}`
       ];
 
-      console.log('FFmpeg command:', command.join(' '));
+      // Apply multithreading optimizations
+      const optimizedCommand = this.getMultithreadingEnabled() 
+        ? createOptimizedFFmpegCommand(baseCommand)
+        : baseCommand;
+
+      console.log('FFmpeg command:', optimizedCommand.join(' '));
+      console.log(`Using ${this.getMultithreadingEnabled() ? 'multithreaded' : 'single-threaded'} processing`);
 
       // Stage 4: Video encoding (40-90%)
       onProgress?.(40, 'Encoding video...');
       
       // Execute FFmpeg command
-      await this.ffmpeg.exec(command);
+      await this.ffmpeg.exec(optimizedCommand);
       
       // Simulate encoding progress (since FFmpeg doesn't provide real-time progress)
       for (let i = 40; i <= 90; i += 10) {
@@ -247,14 +275,20 @@ export class FFmpegManager {
       const videoData = await fetchFile(videoBlob);
       await this.ffmpeg.writeFile('input_video.mp4', videoData);
 
-      // Extract first frame
-      await this.ffmpeg.exec([
+      // Extract first frame with optimization flags
+      const baseCommand = [
         '-i', 'input_video.mp4',
         '-vframes', '1',
         '-f', 'image2',
         '-y',
         'thumbnail.jpg'
-      ]);
+      ];
+
+      const optimizedCommand = this.getMultithreadingEnabled() 
+        ? createOptimizedFFmpegCommand(baseCommand)
+        : baseCommand;
+
+      await this.ffmpeg.exec(optimizedCommand);
 
       const thumbnailData = await this.ffmpeg.readFile('thumbnail.jpg');
       
@@ -264,23 +298,107 @@ export class FFmpegManager {
         await this.ffmpeg.deleteFile('thumbnail.jpg');
       } catch (e) {
         // Ignore cleanup errors
+        console.warn('Thumbnail cleanup failed:', e);
       }
 
       const thumbnailBlob = new Blob([thumbnailData], { type: 'image/jpeg' });
       return URL.createObjectURL(thumbnailBlob);
     } catch (error) {
       console.error('Thumbnail creation error:', error);
-      return '';
+      
+      // Try fallback thumbnail creation
+      try {
+        return await this.createFallbackThumbnail(videoBlob);
+      } catch (fallbackError) {
+        console.error('Fallback thumbnail creation also failed:', fallbackError);
+        return '';
+      }
     }
+  }
+
+  private async createFallbackThumbnail(videoBlob: Blob): Promise<string> {
+    // Create a simple fallback thumbnail using video element
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Thumbnail creation timeout'));
+      }, 10000); // 10 second timeout
+
+      video.onloadeddata = () => {
+        try {
+          clearTimeout(timeout);
+          
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          if (!ctx) {
+            reject(new Error('Failed to get canvas context'));
+            return;
+          }
+
+          canvas.width = 320;
+          canvas.height = 180;
+          
+          // Draw video frame to canvas
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          
+          const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.8);
+          resolve(thumbnailUrl);
+        } catch (error) {
+          clearTimeout(timeout);
+          reject(error);
+        }
+      };
+      
+      video.onerror = () => {
+        clearTimeout(timeout);
+        reject(new Error('Failed to load video for thumbnail'));
+      };
+      
+      // Set video source
+      video.src = URL.createObjectURL(videoBlob);
+      video.load();
+    });
+  }
+
+  /**
+   * Check if multithreading is enabled for this instance
+   */
+  isMultithreadingEnabled(): boolean {
+    return this.getMultithreadingEnabled();
+  }
+
+  /**
+   * Get the optimal thread count for this system
+   */
+  getOptimalThreadCount(): number {
+    return getOptimalThreadCount();
+  }
+
+  /**
+   * Check if FFmpeg is loaded and ready
+   */
+  isFFmpegLoaded(): boolean {
+    return this.isLoaded;
   }
 }
 
-// Create singleton instance
-export const ffmpegManager = new FFmpegManager();
+// Create singleton instance lazily
+let _ffmpegManager: FFmpegManager | null = null;
+
+export function getFFmpegManager(): FFmpegManager {
+  if (!_ffmpegManager) {
+    _ffmpegManager = new FFmpegManager();
+  }
+  return _ffmpegManager;
+}
 
 // Export utility functions
 export async function getFFmpegCodecs(): Promise<FFmpegCodec[]> {
-  return await ffmpegManager.getSupportedCodecs();
+  return await getFFmpegManager().getSupportedCodecs();
 }
 
 export async function generateVideoWithFFmpeg(
@@ -293,5 +411,69 @@ export async function generateVideoWithFFmpeg(
   },
   onProgress?: (progress: number, stage: string) => void
 ): Promise<Blob> {
-  return await ffmpegManager.generateVideoFromImages(imageFiles, settings, onProgress);
+  return await getFFmpegManager().generateVideoFromImages(imageFiles, settings, onProgress);
+}
+
+// Export multithreading utilities
+export { 
+  shouldEnableFFmpegMultithreading, 
+  getOptimalThreadCount, 
+  getFFmpegOptimizationFlags,
+  createOptimizedFFmpegCommand,
+  logBrowserCapabilities 
+} from './browserCapabilities';
+
+// Re-export from worker manager for convenience
+export { isMultithreadingAvailable } from './ffmpegWorkerManager';
+
+// Add global function for debugging (development only)
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  (window as any).checkMultithreadingStatus = () => {
+    const manager = getFFmpegManager();
+    const capabilities = detectBrowserCapabilities();
+    const workerManager = ffmpegWorkerManager;
+    
+    console.log('🔍 Multithreading Status Check:', {
+      browser: {
+        webWorkers: capabilities.webWorkers,
+        sharedArrayBuffer: capabilities.sharedArrayBuffer,
+        atomics: capabilities.atomics,
+        hardwareConcurrency: capabilities.hardwareConcurrency,
+        deviceMemory: capabilities.deviceMemory
+      },
+      ffmpeg: {
+        loaded: manager.isFFmpegLoaded(),
+        multithreadingEnabled: manager.isMultithreadingEnabled(),
+        optimalThreads: manager.getOptimalThreadCount()
+      },
+      worker: {
+        enabled: workerManager.isMultithreadingEnabled(),
+        ready: workerManager.isWorkerReady(),
+        initialized: workerManager.getMultithreadingStatus()
+      },
+      multithreading: {
+        shouldEnable: shouldEnableFFmpegMultithreading(),
+        isAvailable: isMultithreadingAvailable(),
+        willUse: shouldEnableFFmpegMultithreading() && isMultithreadingAvailable(),
+        mode: workerManager.getMultithreadingStatus().mode
+      }
+    });
+    
+    return {
+      browser: capabilities,
+      ffmpeg: {
+        loaded: manager.isFFmpegLoaded(),
+        multithreadingEnabled: manager.isMultithreadingEnabled(),
+        optimalThreads: manager.getOptimalThreadCount()
+      },
+      worker: workerManager.getMultithreadingStatus(),
+      multithreading: {
+        shouldEnable: shouldEnableFFmpegMultithreading(),
+        isAvailable: isMultithreadingAvailable(),
+        willUse: shouldEnableFFmpegMultithreading() && isMultithreadingAvailable()
+      }
+    };
+  };
+  
+  console.log('🔧 Debug function available: checkMultithreadingStatus()');
 }
