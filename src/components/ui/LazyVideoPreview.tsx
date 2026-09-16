@@ -1,7 +1,6 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
 import { VideoPreview as VideoPreviewType } from '../../types';
 
-// Lazy load the VideoPreview component
 const VideoPreview = lazy(() => import('./VideoPreview').then(module => ({ default: module.VideoPreview })));
 
 interface LazyVideoPreviewProps {
@@ -14,7 +13,6 @@ interface LazyVideoPreviewProps {
 export function LazyVideoPreview({ video, isOpen, onClose, onDownload }: LazyVideoPreviewProps) {
   const [shouldLoad, setShouldLoad] = useState(false);
 
-  // Only load the component when the modal is opened
   useEffect(() => {
     if (isOpen && !shouldLoad) {
       setShouldLoad(true);
@@ -25,20 +23,22 @@ export function LazyVideoPreview({ video, isOpen, onClose, onDownload }: LazyVid
 
   return (
     <Suspense fallback={
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
-          <div className="flex justify-between items-center p-4 border-b">
-            <h3 className="text-lg font-semibold">Video Preview</h3>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4">
+        <div className="surface w-full max-w-4xl overflow-hidden">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+            <h3 className="font-display text-lg font-semibold text-ink">Preview</h3>
             <button
+              type="button"
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 text-2xl"
+              className="btn-ghost text-xl leading-none"
+              aria-label="Close preview"
             >
               ×
             </button>
           </div>
-          <div className="p-4 flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <span className="ml-2 text-gray-600">Loading video preview...</span>
+          <div className="flex h-64 items-center justify-center p-4">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-accent" />
+            <span className="ml-3 text-ink-muted">Loading preview…</span>
           </div>
         </div>
       </div>

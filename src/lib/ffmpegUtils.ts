@@ -264,7 +264,7 @@ export class FFmpegManager {
         }
       }
       
-      const videoBlob = new Blob([videoData], { type: 'video/mp4' });
+      const videoBlob = new Blob([videoData as BlobPart], { type: 'video/mp4' });
       console.log('✅ Video blob created, size:', videoBlob.size);
       
       // Additional validation
@@ -523,7 +523,7 @@ export class FFmpegManager {
       // Handle both Uint8Array and string return types from FFmpeg
       let thumbnailBlob: Blob;
       if (thumbnailData instanceof Uint8Array) {
-        thumbnailBlob = new Blob([thumbnailData], { type: 'image/jpeg' });
+        thumbnailBlob = new Blob([thumbnailData as BlobPart], { type: 'image/jpeg' });
       } else {
         // Convert string to Uint8Array if needed
         const encoder = new TextEncoder();

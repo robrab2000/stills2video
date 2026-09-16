@@ -9,95 +9,92 @@ import { useVideoCodecs } from "../hooks/useVideoCodecs";
 import { useVideoGenerator } from "../hooks/useVideoGenerator";
 import { VideoService } from "../services/videoService";
 import { FileService } from "../services/fileService";
-import { CodecService } from "../services/codecService";
 import { UploadZone } from "./ui/UploadZone";
 import { ImageGrid } from "./ui/ImageGrid";
 import { VirtualImageGrid } from "./ui/VirtualImageGrid";
 import { VideoSettings } from "./ui/VideoSettings";
 import { LazyVideoPreview } from "./ui/LazyVideoPreview";
 import { GeneratedVideosList } from "./ui/GeneratedVideosList";
-import { SortOption } from "../types";
+import { SortOption, VideoPreview, VideoSettings as VideoSettingsType } from "../types";
 import { shouldEnableFFmpegMultithreading, isMultithreadingAvailable } from '../lib/ffmpegUtils';
+
+const isDev = process.env.NODE_ENV === 'development';
+
+function loadImageDimensions(
+  images: { id: string; url: string; width?: number; height?: number }[],
+  update: (id: string, width: number, height: number) => void
+) {
+  images.forEach((image) => {
+    if (image.width && image.height) return;
+    const img = new window.Image();
+    img.onload = () => {
+      update(image.id, img.naturalWidth, img.naturalHeight);
+    };
+    img.src = image.url;
+  });
+}
 
 export function ImageToVideoConverter() {
   const [state, dispatch] = useApp();
   const [sortOption, setSortOption] = useState<SortOption>("manual");
-  const [multithreadingStatus, setMultithreadingStatus] = useState<{
-    enabled: boolean;
-    available: boolean;
-    active: boolean;
-  }>({
-    enabled: false,
-    available: false,
-    active: false
-  });
 
-  // Use the new state slice hooks
-  const { images, addImages, removeImage, clearAllImages, reorderImages } = useImages();
+  const { images, removeImage, clearAllImages, reorderImages } = useImages();
   const { videos, addVideo, removeVideo, clearAllVideos } = useVideos();
   const { settings, updateSettings } = useSettings();
   const { ui, setUIState } = useUI();
 
-  // Initialize video codecs
   const { videoCodecs, selectedCodec, setSelectedCodec } = useVideoCodecs();
 
-  // Update codecs in global state
+  // Keep settings.selectedCodec as the single source of truth once codecs load
   useEffect(() => {
     if (videoCodecs.length > 0) {
       dispatch({ type: 'SET_VIDEO_CODECS', payload: videoCodecs });
     }
   }, [videoCodecs, dispatch]);
 
-  // Check multithreading status
   useEffect(() => {
-    const checkMultithreadingStatus = () => {
-      const enabled = shouldEnableFFmpegMultithreading();
-      const available = isMultithreadingAvailable();
-      
-      setMultithreadingStatus({
-        enabled,
-        available,
-        active: enabled && available
-      });
-    };
+    if (selectedCodec && selectedCodec !== settings.selectedCodec) {
+      updateSettings({ selectedCodec });
+    }
+  }, [selectedCodec, settings.selectedCodec, updateSettings]);
 
+  useEffect(() => {
+    loadImageDimensions(images, (id, width, height) => {
+      dispatch({
+        type: 'UPDATE_IMAGE_METADATA',
+        payload: { id, metadata: { width, height } },
+      });
+    });
+  }, [images, dispatch]);
+
+  // Pre-init FFmpeg worker quietly (dev status only via PerformanceMonitor)
+  useEffect(() => {
     const initializeWorker = async () => {
       try {
-        // Pre-initialize the FFmpeg worker to ensure it's ready when needed
         const { ffmpegWorkerManager } = await import('../lib/ffmpegWorkerManager');
         await ffmpegWorkerManager.initialize();
-        console.log('🔧 FFmpeg worker pre-initialized');
+        if (isDev) {
+          console.log('FFmpeg worker pre-initialized', {
+            enabled: shouldEnableFFmpegMultithreading(),
+            available: isMultithreadingAvailable(),
+          });
+        }
       } catch (error) {
-        console.warn('⚠️ Failed to pre-initialize FFmpeg worker:', error);
-        // Worker failed to initialize, will fall back to main thread
+        if (isDev) {
+          console.warn('Failed to pre-initialize FFmpeg worker:', error);
+        }
       }
     };
 
-    checkMultithreadingStatus();
-    
-    // Initialize worker and check status again
-    initializeWorker().then(() => {
-      // Check status again after initialization
-      setTimeout(checkMultithreadingStatus, 1000);
-    }).catch(() => {
-      // Worker failed, check status anyway
-      setTimeout(checkMultithreadingStatus, 1000);
-    });
-    
-    // Check again after a delay to allow FFmpeg to load
-    const timer = setTimeout(checkMultithreadingStatus, 3000);
-    
-    return () => clearTimeout(timer);
+    initializeWorker();
   }, []);
 
-  // Image management - updated to work with the new state system
   const imageManager = useImageManager(
     images,
     sortOption,
     setSortOption
   );
 
-  // Video generation
   const videoGenerator = useVideoGenerator(
     (video) => {
       addVideo(video);
@@ -107,60 +104,51 @@ export function ImageToVideoConverter() {
     (isGenerating) => setUIState({ isGenerating })
   );
 
-  // Memoize expensive calculations
-  const shouldUseVirtualGrid = useMemo(() => {
-    return images.length > 50; // Use virtual scrolling for large image collections
-  }, [images.length]);
+  const shouldUseVirtualGrid = useMemo(() => images.length > 50, [images.length]);
+  const hasImages = images.length > 0;
 
-  // Memoize event handlers
   const handleGenerateVideo = useCallback(async () => {
     if (images.length === 0) {
       toast.error("Please add some images first");
       return;
     }
 
-    try {
-      // Log multithreading status before generation
-      console.log('🎬 Starting video generation with multithreading:', {
-        enabled: multithreadingStatus.enabled,
-        available: multithreadingStatus.available,
-        active: multithreadingStatus.active
-      });
+    const codec = settings.selectedCodec || selectedCodec;
 
-      // Set generating state to true and reset progress
+    try {
       setUIState({ isGenerating: true, generationProgress: 0 });
-      
+
       const video = await VideoService.generateVideo(
         images,
         settings,
-        selectedCodec, // Use selectedCodec from useVideoCodecs hook
+        codec,
         state.videoCodecs,
         (progress) => setUIState({ generationProgress: progress })
       );
-      
+
       addVideo(video);
       setUIState({ videoPreview: video, showPreview: true });
-      toast.success("Video generated successfully! Preview available.");
+      toast.success("Video generated successfully");
     } catch (error) {
       console.error("Error generating video:", error);
       toast.error("Failed to generate video");
     } finally {
       setUIState({ isGenerating: false, generationProgress: 0 });
     }
-  }, [images, settings, selectedCodec, state.videoCodecs, addVideo, setUIState, multithreadingStatus]);
+  }, [images, settings, selectedCodec, state.videoCodecs, addVideo, setUIState]);
 
-  const handleDownloadVideo = useCallback((video: any) => {
+  const handleDownloadVideo = useCallback((video: VideoPreview) => {
     FileService.downloadVideo(video);
-    toast.success("Video downloaded successfully!");
+    toast.success("Video downloaded");
   }, []);
 
-  const handlePreviewVideo = useCallback((video: any) => {
+  const handlePreviewVideo = useCallback((video: VideoPreview) => {
     setUIState({ videoPreview: video, showPreview: true });
   }, [setUIState]);
 
   const handleRemoveGeneratedVideo = useCallback((videoId: string) => {
     removeVideo(videoId);
-    toast.success("Video removed from list");
+    toast.success("Video removed");
   }, [removeVideo]);
 
   const handleClearAllVideos = useCallback(() => {
@@ -171,18 +159,12 @@ export function ImageToVideoConverter() {
     setUIState({ showPreview: false, videoPreview: null });
   }, [setUIState]);
 
-  const handleTogglePanel = useCallback((panel: keyof typeof ui.collapsedPanels) => {
-    setUIState({
-      collapsedPanels: {
-        ...ui.collapsedPanels,
-        [panel]: !ui.collapsedPanels[panel]
-      }
-    });
-  }, [ui.collapsedPanels, setUIState]);
-
-  const handleSettingsChange = useCallback((newSettings: any) => {
+  const handleSettingsChange = useCallback((newSettings: Partial<VideoSettingsType>) => {
     updateSettings(newSettings);
-  }, [updateSettings]);
+    if (newSettings.selectedCodec) {
+      setSelectedCodec(newSettings.selectedCodec);
+    }
+  }, [updateSettings, setSelectedCodec]);
 
   const handleDragStart = useCallback((index: number) => {
     setUIState({ draggedIndex: index });
@@ -194,6 +176,7 @@ export function ImageToVideoConverter() {
 
   const handleReorderImages = useCallback((fromIndex: number, toIndex: number) => {
     reorderImages(fromIndex, toIndex);
+    setSortOption('manual');
   }, [reorderImages]);
 
   const handleClearAllImages = useCallback(() => {
@@ -205,127 +188,139 @@ export function ImageToVideoConverter() {
   }, [removeImage]);
 
   return (
-    <div className="space-y-6">
-      <div className="main-logo">
-        <Image
-          src="/logo.png"
-          alt="Stills-2-Video Logo"
-          width={128}
-          height={128}
-          className="mx-auto h-32 w-auto mb-4"
-          priority
-        />
-      </div>
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-400 mb-2">A Simple Image Sequence to Video Converter</h1>
-        <p className="text-gray-600 text-sm md:text-base">Drop images, arrange them, and export as video</p>
-      </div>
-
-      {/* Multithreading Status Indicator */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className={`w-3 h-3 rounded-full ${multithreadingStatus.active ? 'bg-green-500' : multithreadingStatus.enabled && !multithreadingStatus.available ? 'bg-yellow-500' : 'bg-gray-400'}`}></div>
-            <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
-              {multithreadingStatus.active ? 'Multithreaded Processing' : 
-               multithreadingStatus.enabled && !multithreadingStatus.available ? 'Hybrid Processing' :
-               'Single-threaded Processing'}
+    <div className="space-y-8">
+      {hasImages ? (
+        <>
+          <header className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Image
+                src="/logo-mark.png"
+                alt=""
+                width={40}
+                height={27}
+                className="h-8 w-auto"
+                priority
+              />
+              <div>
+                <h1 className="font-display text-xl font-semibold tracking-tight text-ink md:text-2xl">
+                  Stills-2-Video
+                </h1>
+              </div>
+            </div>
+            <span className="chip">
+              <span className="chip-dot" aria-hidden="true" />
+              Runs locally
             </span>
-          </div>
-          <div className="text-xs text-blue-700 dark:text-blue-300">
-            {multithreadingStatus.enabled && multithreadingStatus.available ? (
-              '🚀 Using multiple CPU cores'
-            ) : multithreadingStatus.enabled && !multithreadingStatus.available ? (
-              '🔄 Worker ready, using main thread for FFmpeg'
-            ) : (
-              'ℹ️ Single-threaded mode'
-            )}
-          </div>
-        </div>
-        {!multithreadingStatus.active && (
-          <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
-            {!multithreadingStatus.enabled && 'Multithreading disabled for this browser/device'}
-            {multithreadingStatus.enabled && !multithreadingStatus.available && 'Worker communication available, FFmpeg uses main thread for compatibility'}
-          </div>
-        )}
-      </div>
+          </header>
 
-      {/* Upload Zone */}
-      <UploadZone
-        onFilesSelected={imageManager.handleFileSelect}
-        onDrop={imageManager.handleDrop}
-        onDragOver={imageManager.handleDragOver}
-        disabled={ui.isGenerating}
-      />
-
-      {/* Video Settings */}
-      <VideoSettings
-        settings={settings}
-        videoCodecs={state.videoCodecs}
-        sortOption={sortOption}
-        imagesCount={images.length}
-        isGenerating={ui.isGenerating}
-        generationProgress={ui.generationProgress}
-        onSettingsChange={handleSettingsChange}
-        onSortOptionChange={imageManager.handleSortOptionChange}
-        onGenerateVideo={handleGenerateVideo}
-        onTogglePanel={() => handleTogglePanel('settings')}
-        isPanelCollapsed={ui.collapsedPanels.settings}
-      />
-
-      {/* Generated Videos List */}
-      <GeneratedVideosList
-        videos={videos}
-        onPreview={handlePreviewVideo}
-        onDownload={handleDownloadVideo}
-        onRemove={handleRemoveGeneratedVideo}
-        onClearAll={handleClearAllVideos}
-        onTogglePanel={() => handleTogglePanel('generatedVideos')}
-        isPanelCollapsed={ui.collapsedPanels.generatedVideos}
-      />
-
-      {/* Image Grid - Use virtual scrolling for large collections */}
-      {shouldUseVirtualGrid ? (
-        <VirtualImageGrid
-          images={images}
-          sortOption={sortOption}
-          draggedIndex={ui.draggedIndex}
-          onRemoveImage={handleRemoveImage}
-          onClearAll={handleClearAllImages}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragOverItem={(e, index) => imageManager.handleDragOverItem(
-            e, 
-            index, 
-            ui.draggedIndex, 
-            handleReorderImages, 
-            handleDragStart
+          {shouldUseVirtualGrid ? (
+            <VirtualImageGrid
+              images={images}
+              sortOption={sortOption}
+              draggedIndex={ui.draggedIndex}
+              onRemoveImage={handleRemoveImage}
+              onClearAll={handleClearAllImages}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragOverItem={(e, index) => imageManager.handleDragOverItem(
+                e,
+                index,
+                ui.draggedIndex,
+                handleReorderImages,
+                handleDragStart
+              )}
+              onFilesSelected={imageManager.handleFileSelect}
+              onDrop={imageManager.handleDrop}
+              onDragOver={imageManager.handleDragOver}
+              isGenerating={ui.isGenerating}
+            />
+          ) : (
+            <ImageGrid
+              images={images}
+              sortOption={sortOption}
+              draggedIndex={ui.draggedIndex}
+              onRemoveImage={handleRemoveImage}
+              onClearAll={handleClearAllImages}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragOverItem={(e, index) => imageManager.handleDragOverItem(
+                e,
+                index,
+                ui.draggedIndex,
+                handleReorderImages,
+                handleDragStart
+              )}
+              onFilesSelected={imageManager.handleFileSelect}
+              onDrop={imageManager.handleDrop}
+              onDragOver={imageManager.handleDragOver}
+              isGenerating={ui.isGenerating}
+            />
           )}
-          onTogglePanel={() => handleTogglePanel('images')}
-          isPanelCollapsed={ui.collapsedPanels.images}
-        />
+
+          <VideoSettings
+            settings={settings}
+            videoCodecs={state.videoCodecs}
+            sortOption={sortOption}
+            images={images}
+            imagesCount={images.length}
+            isGenerating={ui.isGenerating}
+            generationProgress={ui.generationProgress}
+            onSettingsChange={handleSettingsChange}
+            onSortOptionChange={imageManager.handleSortOptionChange}
+            onGenerateVideo={handleGenerateVideo}
+          />
+
+          <GeneratedVideosList
+            videos={videos}
+            onPreview={handlePreviewVideo}
+            onDownload={handleDownloadVideo}
+            onRemove={handleRemoveGeneratedVideo}
+            onClearAll={handleClearAllVideos}
+          />
+        </>
       ) : (
-        <ImageGrid
-          images={images}
-          sortOption={sortOption}
-          draggedIndex={ui.draggedIndex}
-          onRemoveImage={handleRemoveImage}
-          onClearAll={handleClearAllImages}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragOverItem={(e, index) => imageManager.handleDragOverItem(
-            e, 
-            index, 
-            ui.draggedIndex, 
-            handleReorderImages, 
-            handleDragStart
+        <div className="mx-auto flex min-h-[70vh] max-w-2xl flex-col items-center justify-center text-center">
+          <Image
+            src="/logo-web.png"
+            alt="Stills-2-Video"
+            width={280}
+            height={187}
+            className="mb-6 h-auto w-48 md:w-64"
+            priority
+          />
+          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink md:text-5xl">
+            Stills-2-Video
+          </h1>
+          <p className="mt-3 max-w-md text-base text-ink-muted md:text-lg">
+            Drop stills. Export video. All in your browser.
+          </p>
+          <p className="mt-2 text-sm text-ink-faint">
+            Nothing is uploaded — encoding stays on your device.
+          </p>
+
+          <div className="mt-10 w-full">
+            <UploadZone
+              onFilesSelected={imageManager.handleFileSelect}
+              onDrop={imageManager.handleDrop}
+              onDragOver={imageManager.handleDragOver}
+              disabled={ui.isGenerating}
+            />
+          </div>
+
+          {videos.length > 0 && (
+            <div className="mt-10 w-full text-left">
+              <GeneratedVideosList
+                videos={videos}
+                onPreview={handlePreviewVideo}
+                onDownload={handleDownloadVideo}
+                onRemove={handleRemoveGeneratedVideo}
+                onClearAll={handleClearAllVideos}
+              />
+            </div>
           )}
-          onTogglePanel={() => handleTogglePanel('images')}
-          isPanelCollapsed={ui.collapsedPanels.images}
-        />
+        </div>
       )}
 
-      {/* Lazy Video Preview Modal */}
       <LazyVideoPreview
         video={ui.videoPreview}
         isOpen={ui.showPreview}
@@ -333,7 +328,6 @@ export function ImageToVideoConverter() {
         onDownload={handleDownloadVideo}
       />
 
-      {/* Hidden canvas for video generation */}
       <canvas
         ref={videoGenerator.canvasRef}
         className="hidden"

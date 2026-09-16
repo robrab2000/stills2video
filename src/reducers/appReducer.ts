@@ -1,6 +1,7 @@
 import { AppState, AppAction, VideoSettings, UIState, Notification, AppError, AppWarning } from '../types';
 import { FileService } from '../services/fileService';
 import { UIService } from '../services/uiService';
+import { sortImages } from '../lib/imageUtils';
 
 // Helper function to generate unique IDs
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -20,14 +21,17 @@ const cleanupUrls = (items: any[]) => {
   });
 };
 
+const isDev = process.env.NODE_ENV === 'development';
+
 export function appReducer(state: AppState, action: AppAction): AppState {
   try {
-    console.log('🔄 Reducer called with action:', action.type, action);
+    if (isDev) {
+      console.log('🔄 Reducer called with action:', action.type);
+    }
     
     switch (action.type) {
       // Image management
       case 'ADD_IMAGES':
-        console.log('📸 Adding images:', action.payload.length);
         return {
           ...state,
           images: [...state.images, ...action.payload]
@@ -51,8 +55,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         };
 
       case 'SORT_IMAGES':
-        // Sorting is handled by the useImageManager hook
-        return state;
+        if (action.payload === 'manual') {
+          return state;
+        }
+        return {
+          ...state,
+          images: sortImages(state.images, action.payload)
+        };
 
       case 'REORDER_IMAGES':
         const { fromIndex, toIndex } = action.payload;

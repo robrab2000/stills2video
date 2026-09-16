@@ -1,6 +1,7 @@
-import { useMemo, useCallback, useState, useEffect } from 'react';
+import { useCallback } from 'react';
 import { ImageFile, SortOption } from '../../types';
 import { ImageGridItem } from './ImageGridItem';
+import { UploadZone } from './UploadZone';
 
 interface ImageGridProps {
   images: ImageFile[];
@@ -11,8 +12,10 @@ interface ImageGridProps {
   onDragStart: (index: number) => void;
   onDragEnd: () => void;
   onDragOverItem: (e: React.DragEvent, index: number) => void;
-  onTogglePanel: () => void;
-  isPanelCollapsed: boolean;
+  onFilesSelected?: (files: FileList) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  isGenerating?: boolean;
 }
 
 export function ImageGrid({
@@ -24,47 +27,15 @@ export function ImageGrid({
   onDragStart,
   onDragEnd,
   onDragOverItem,
-  onTogglePanel,
-  isPanelCollapsed
+  onFilesSelected,
+  onDrop,
+  onDragOver,
+  isGenerating = false,
 }: ImageGridProps) {
-  const [windowWidth, setWindowWidth] = useState<number>(1024); // Default fallback
-
-  // Handle window resize safely
-  useEffect(() => {
-    const updateWidth = () => {
-      setWindowWidth(window.innerWidth);
-    };
-
-    // Set initial width
-    updateWidth();
-
-    // Add event listener
-    window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
-  }, []);
-
-  // Memoize the grid layout calculation
-  const gridLayout = useMemo(() => {
-    // Determine number of columns based on screen size
-    const isLargeScreen = windowWidth >= 1024; // lg
-    const isMediumScreen = windowWidth >= 768; // md
-    
-    if (isLargeScreen) return 'grid-cols-6';
-    if (isMediumScreen) return 'grid-cols-4';
-    return 'grid-cols-2';
-  }, [windowWidth]);
-
-  // Memoize the clear all handler
   const handleClearAll = useCallback(() => {
     onClearAll();
   }, [onClearAll]);
 
-  // Memoize the toggle panel handler
-  const handleTogglePanel = useCallback(() => {
-    onTogglePanel();
-  }, [onTogglePanel]);
-
-  // Memoize the drag end handler
   const handleDragEnd = useCallback(() => {
     onDragEnd();
   }, [onDragEnd]);
@@ -72,44 +43,51 @@ export function ImageGrid({
   if (images.length === 0) return null;
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border">
-      <div className="flex justify-between items-center p-4 hover:bg-gray-50 transition-colors">
+    <section className="space-y-4" aria-labelledby="sequence-heading">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 id="sequence-heading" className="font-display text-lg font-semibold text-ink">
+            Sequence
+          </h2>
+          <p className="text-sm text-ink-muted">
+            {images.length} still{images.length === 1 ? '' : 's'}
+            {sortOption === 'manual' ? ' · drag to reorder' : ''}
+          </p>
+        </div>
         <button
-          onClick={handleTogglePanel}
-          className="flex items-center hover:bg-gray-100 rounded px-2 py-1 transition-colors"
-        >
-          <span className="text-gray-400 text-xs mr-2">
-            {isPanelCollapsed ? '▶' : '▼'}
-          </span>
-          <h3 className="text-lg font-semibold">Images ({images.length})</h3>
-        </button>
-        <button
+          type="button"
           onClick={handleClearAll}
-          className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+          className="btn-danger"
         >
           Clear All
         </button>
       </div>
-      
-      {!isPanelCollapsed && (
-        <div className="px-6 pb-6">
-          <div className={`grid ${gridLayout} gap-4`}>
-            {images.map((image, index) => (
-              <ImageGridItem
-                key={image.id}
-                image={image}
-                index={index}
-                sortOption={sortOption}
-                isDragged={draggedIndex === index}
-                onRemove={onRemoveImage}
-                onDragStart={onDragStart}
-                onDragEnd={handleDragEnd}
-                onDragOver={onDragOverItem}
-              />
-            ))}
-          </div>
-        </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+        {images.map((image, index) => (
+          <ImageGridItem
+            key={image.id}
+            image={image}
+            index={index}
+            sortOption={sortOption}
+            isDragged={draggedIndex === index}
+            onRemove={onRemoveImage}
+            onDragStart={onDragStart}
+            onDragEnd={handleDragEnd}
+            onDragOver={onDragOverItem}
+          />
+        ))}
+      </div>
+
+      {onFilesSelected && onDrop && onDragOver && (
+        <UploadZone
+          onFilesSelected={onFilesSelected}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          disabled={isGenerating}
+          compact
+        />
       )}
-    </div>
+    </section>
   );
 }

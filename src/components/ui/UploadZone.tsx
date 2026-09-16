@@ -5,13 +5,51 @@ interface UploadZoneProps {
   onDrop: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
   disabled?: boolean;
+  compact?: boolean;
 }
 
-export function UploadZone({ onFilesSelected, onDrop, onDragOver, disabled = false }: UploadZoneProps) {
+function UploadIcon({ active }: { active: boolean }) {
+  return (
+    <svg
+      width="40"
+      height="40"
+      viewBox="0 0 40 40"
+      fill="none"
+      aria-hidden="true"
+      className="mx-auto"
+    >
+      <rect
+        x="6"
+        y="10"
+        width="28"
+        height="20"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        className={active ? 'text-accent' : 'text-ink-muted'}
+      />
+      <path
+        d="M20 16v10M15.5 20.5 20 16l4.5 4.5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={active ? 'text-accent' : 'text-ink-muted'}
+      />
+    </svg>
+  );
+}
+
+export function UploadZone({
+  onFilesSelected,
+  onDrop,
+  onDragOver,
+  disabled = false,
+  compact = false,
+}: UploadZoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  // Memoize event handlers for better performance
   const handleBrowseClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
@@ -19,6 +57,7 @@ export function UploadZone({ onFilesSelected, onDrop, onDragOver, disabled = fal
   const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       onFilesSelected(e.target.files);
+      e.target.value = '';
     }
   }, [onFilesSelected]);
 
@@ -43,36 +82,55 @@ export function UploadZone({ onFilesSelected, onDrop, onDragOver, disabled = fal
     setIsDragOver(true);
   }, []);
 
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (disabled) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleBrowseClick();
+    }
+  }, [disabled, handleBrowseClick]);
+
   return (
     <div
-      className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
-        isDragOver 
-          ? 'border-blue-400 bg-blue-50' 
-          : 'border-gray-300 hover:border-gray-400'
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-label="Drop images here or browse files"
+      aria-disabled={disabled}
+      className={`text-center transition-all duration-200 outline-none ${
+        compact ? 'rounded-lg border border-dashed p-4' : 'rounded-xl border-2 border-dashed p-10 md:p-14'
       } ${
-        disabled ? 'opacity-50 cursor-not-allowed' : ''
-      }`}
+        isDragOver
+          ? 'drop-active border-accent bg-accent/5'
+          : 'border-line hover:border-ink-muted'
+      } ${
+        disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+      } focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-paper`}
+      data-testid="upload-zone"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
+      onClick={disabled ? undefined : handleBrowseClick}
+      onKeyDown={handleKeyDown}
     >
-      <div className="space-y-4">
-        <div className="text-4xl">
-          {isDragOver ? '📂' : '📁'}
-        </div>
+      <div className={compact ? 'space-y-2' : 'space-y-4'}>
+        <UploadIcon active={isDragOver} />
         <div>
-          <p className="text-lg font-medium text-gray-900">
-            {isDragOver ? 'Drop images here' : 'Drop images here'}
+          <p className={`font-display font-semibold text-ink ${compact ? 'text-base' : 'text-xl'}`}>
+            {isDragOver ? 'Release to add stills' : 'Drop images here'}
           </p>
-          <p className="text-gray-500">
-            {isDragOver ? 'Release to upload' : 'or click to browse'}
+          <p className="mt-1 text-sm text-ink-muted">
+            {isDragOver ? 'Images stay on your device' : 'or click to browse — JPG, PNG, WebP, and more'}
           </p>
         </div>
         <button
-          onClick={handleBrowseClick}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleBrowseClick();
+          }}
           disabled={disabled}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          className="btn-primary"
         >
           Browse Files
         </button>

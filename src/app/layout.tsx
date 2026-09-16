@@ -1,15 +1,25 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Syne, Source_Sans_3 } from 'next/font/google'
 import './globals.css'
 import { Toaster } from 'sonner'
 import { Analytics } from '@vercel/analytics/react'
 import { AppProvider } from '../contexts/AppContext'
 
-const inter = Inter({ subsets: ['latin'] })
+const syne = Syne({
+  subsets: ['latin'],
+  variable: '--font-syne',
+  display: 'swap',
+})
+
+const sourceSans = Source_Sans_3({
+  subsets: ['latin'],
+  variable: '--font-source-sans',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: 'Stills-2-Video Converter',
-  description: 'A simple image sequence to video converter',
+  title: 'Stills-2-Video',
+  description: 'Drop stills. Export video. All in your browser.',
 }
 
 export default function RootLayout({
@@ -19,13 +29,18 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={`${syne.variable} ${sourceSans.variable} font-ui antialiased`}>
+        <div className="app-grain" aria-hidden="true" />
         <AppProvider>
           {children}
         </AppProvider>
-        <Toaster />
+        <Toaster
+          toastOptions={{
+            className: 'font-ui',
+          }}
+        />
         <Analytics />
       </body>
     </html>
   )
-} 
+}

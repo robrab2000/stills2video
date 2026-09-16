@@ -7,6 +7,20 @@ module.exports = {
   ],
   theme: {
     extend: {
+      colors: {
+        paper: 'var(--paper)',
+        'paper-elevated': 'var(--paper-elevated)',
+        ink: 'var(--ink)',
+        'ink-muted': 'var(--ink-muted)',
+        'ink-faint': 'var(--ink-faint)',
+        line: 'var(--line)',
+        accent: 'var(--accent)',
+        'accent-hover': 'var(--accent-hover)',
+      },
+      fontFamily: {
+        display: ['var(--font-syne)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        ui: ['var(--font-source-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
         'gradient-conic':

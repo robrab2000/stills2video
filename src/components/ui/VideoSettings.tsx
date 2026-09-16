@@ -1,56 +1,64 @@
-import { useMemo, useCallback } from 'react';
-import { VideoCodec, VideoSettings as VideoSettingsType, SortOption } from '../../types';
+import { useMemo, useCallback, useState, useEffect } from 'react';
+import { VideoCodec, VideoSettings as VideoSettingsType, SortOption, ImageFile } from '../../types';
+
+type ResolutionPreset = 'match' | '1080p' | '720p' | 'custom';
 
 interface VideoSettingsProps {
   settings: VideoSettingsType;
   videoCodecs: VideoCodec[];
   sortOption: SortOption;
+  images: ImageFile[];
   imagesCount: number;
   isGenerating: boolean;
   generationProgress: number;
   onSettingsChange: (settings: Partial<VideoSettingsType>) => void;
   onSortOptionChange: (option: SortOption) => void;
   onGenerateVideo: () => void;
-  onTogglePanel: () => void;
-  isPanelCollapsed: boolean;
+}
+
+function detectPreset(width: number, height: number, images: ImageFile[]): ResolutionPreset {
+  const first = images[0];
+  if (first?.width && first?.height && width === first.width && height === first.height) {
+    return 'match';
+  }
+  if (width === 1920 && height === 1080) return '1080p';
+  if (width === 1280 && height === 720) return '720p';
+  return 'custom';
 }
 
 export function VideoSettings({
   settings,
   videoCodecs,
   sortOption,
+  images,
   imagesCount,
   isGenerating,
   generationProgress,
   onSettingsChange,
   onSortOptionChange,
   onGenerateVideo,
-  onTogglePanel,
-  isPanelCollapsed
 }: VideoSettingsProps) {
-  // Memoize expensive calculations
+  const [preset, setPreset] = useState<ResolutionPreset>(() =>
+    detectPreset(settings.videoWidth, settings.videoHeight, images)
+  );
+
+  useEffect(() => {
+    setPreset(detectPreset(settings.videoWidth, settings.videoHeight, images));
+  }, [settings.videoWidth, settings.videoHeight, images]);
+
   const videoDuration = useMemo(() => {
     return imagesCount / settings.fps;
   }, [imagesCount, settings.fps]);
 
   const currentStage = useMemo(() => {
-    if (generationProgress < 10) return "Initializing...";
-    if (generationProgress < 30) return "Processing images...";
-    if (generationProgress < 70) return "Encoding video...";
-    if (generationProgress < 95) return "Finalizing...";
-    return "Complete!";
+    if (generationProgress < 10) return 'Initializing…';
+    if (generationProgress < 30) return 'Processing images…';
+    if (generationProgress < 70) return 'Encoding video…';
+    if (generationProgress < 95) return 'Finalizing…';
+    return 'Complete';
   }, [generationProgress]);
 
-  const stageIcon = useMemo(() => {
-    if (generationProgress < 10) return "⚙️";
-    if (generationProgress < 30) return "🖼️";
-    if (generationProgress < 70) return "🎬";
-    if (generationProgress < 95) return "✨";
-    return "✅";
-  }, [generationProgress]);
-
-  // Memoize event handlers
-  const handleSettingChange = useCallback((key: keyof VideoSettingsType, value: any) => {
+  const handleSettingChange = useCallback((key: keyof VideoSettingsType, value: number | string) => {
     onSettingsChange({ [key]: value });
   }, [onSettingsChange]);
 
@@ -67,163 +75,201 @@ export function VideoSettings({
   }, [handleSettingChange]);
 
   const handleWidthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    handleSettingChange('videoWidth', parseInt(e.target.value));
+    setPreset('custom');
+    handleSettingChange('videoWidth', parseInt(e.target.value, 10));
   }, [handleSettingChange]);
 
   const handleHeightChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    handleSettingChange('videoHeight', parseInt(e.target.value));
+    setPreset('custom');
+    handleSettingChange('videoHeight', parseInt(e.target.value, 10));
   }, [handleSettingChange]);
 
-  const handleTogglePanel = useCallback(() => {
-    onTogglePanel();
-  }, [onTogglePanel]);
+  const applyMatchFirst = useCallback(() => {
+    const first = images[0];
+    if (!first) return;
 
-  const handleGenerateVideo = useCallback(() => {
-    onGenerateVideo();
-  }, [onGenerateVideo]);
+    if (first.width && first.height) {
+      onSettingsChange({ videoWidth: first.width, videoHeight: first.height });
+      return;
+    }
+
+    const img = new window.Image();
+    img.onload = () => {
+      onSettingsChange({
+        videoWidth: img.naturalWidth,
+        videoHeight: img.naturalHeight,
+      });
+    };
+    img.src = first.url;
+  }, [images, onSettingsChange]);
+
+  const handlePresetChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const next = e.target.value as ResolutionPreset;
+    setPreset(next);
+
+    if (next === '1080p') {
+      onSettingsChange({ videoWidth: 1920, videoHeight: 1080 });
+      return;
+    }
+    if (next === '720p') {
+      onSettingsChange({ videoWidth: 1280, videoHeight: 720 });
+      return;
+    }
+    if (next === 'match') {
+      applyMatchFirst();
+    }
+  }, [applyMatchFirst, onSettingsChange]);
+
+  useEffect(() => {
+    if (preset !== 'match') return;
+    const first = images[0];
+    if (first?.width && first?.height) {
+      if (settings.videoWidth !== first.width || settings.videoHeight !== first.height) {
+        onSettingsChange({ videoWidth: first.width, videoHeight: first.height });
+      }
+    }
+  }, [preset, images, settings.videoWidth, settings.videoHeight, onSettingsChange]);
 
   if (imagesCount === 0) return null;
 
+  const matchLabel = images[0]?.width && images[0]?.height
+    ? `Match first (${images[0].width}×${images[0].height})`
+    : 'Match first image';
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border">
-      <button
-        onClick={handleTogglePanel}
-        className="w-full p-4 flex items-center hover:bg-gray-50 transition-colors"
-      >
-        <span className="text-gray-400 text-xs mr-2">
-          {isPanelCollapsed ? '▶' : '▼'}
-        </span>
-        <h3 className="text-lg font-semibold">Generate Video</h3>
-      </button>
-      
-      {!isPanelCollapsed && (
-        <div className="px-6 pb-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sort Order
-              </label>
-              <select
-                value={sortOption}
-                onChange={handleSortOptionChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+    <section className="surface p-4 md:p-5" aria-labelledby="export-heading" data-testid="video-settings">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 id="export-heading" className="font-display text-lg font-semibold text-ink">
+            Export
+          </h2>
+          <p className="text-sm text-ink-muted">
+            {imagesCount} frames · {videoDuration.toFixed(2)}s at {settings.fps} fps
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div>
+          <label htmlFor="sort-order" className="field-label">Sort</label>
+          <select
+            id="sort-order"
+            value={sortOption}
+            onChange={handleSortOptionChange}
+            className="field-control"
+          >
+            <option value="manual">Manual (drag)</option>
+            <option value="name">Alphabetical</option>
+            <option value="date">Date modified</option>
+            <option value="size">File size</option>
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="video-codec" className="field-label">Codec</label>
+          <select
+            id="video-codec"
+            value={settings.selectedCodec}
+            onChange={handleCodecChange}
+            className="field-control"
+          >
+            {videoCodecs.map((codec) => (
+              <option
+                key={codec.mimeType}
+                value={codec.mimeType}
+                disabled={!codec.supported}
               >
-                <option value="manual">Manual (drag to reorder)</option>
-                <option value="name">Alphabetical</option>
-                <option value="date">Date Modified</option>
-                <option value="size">File Size</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Video Codec
-              </label>
-              <select
-                value={settings.selectedCodec}
-                onChange={handleCodecChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {videoCodecs.map((codec) => (
-                  <option
-                    key={codec.mimeType}
-                    value={codec.mimeType}
-                    disabled={!codec.supported}
-                    className={!codec.supported ? "text-gray-400" : ""}
-                  >
-                    {codec.name} ({codec.extension.toUpperCase()})
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                FPS
-              </label>
-              <input
-                type="number"
-                min="0.1"
-                max="30"
-                step="0.1"
-                value={settings.fps}
-                onChange={handleFpsChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Width
-              </label>
-              <input
-                type="number"
-                min="480"
-                max="3840"
-                step="1"
-                value={settings.videoWidth}
-                onChange={handleWidthChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Height
-              </label>
-              <input
-                type="number"
-                min="360"
-                max="2160"
-                step="1"
-                value={settings.videoHeight}
-                onChange={handleHeightChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+                {codec.name} ({codec.extension.toUpperCase()})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="fps" className="field-label">FPS</label>
+          <input
+            id="fps"
+            type="number"
+            min="0.1"
+            max="30"
+            step="0.1"
+            value={settings.fps}
+            onChange={handleFpsChange}
+            className="field-control"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="resolution-preset" className="field-label">Size</label>
+          <select
+            id="resolution-preset"
+            value={preset}
+            onChange={handlePresetChange}
+            className="field-control"
+          >
+            <option value="match">{matchLabel}</option>
+            <option value="1080p">1080p (1920×1080)</option>
+            <option value="720p">720p (1280×720)</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="video-width" className="field-label">Width</label>
+          <input
+            id="video-width"
+            type="number"
+            min="480"
+            max="3840"
+            step="1"
+            value={settings.videoWidth}
+            onChange={handleWidthChange}
+            className="field-control"
+            disabled={preset !== 'custom'}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="video-height" className="field-label">Height</label>
+          <input
+            id="video-height"
+            type="number"
+            min="360"
+            max="2160"
+            step="1"
+            value={settings.videoHeight}
+            onChange={handleHeightChange}
+            className="field-control"
+            disabled={preset !== 'custom'}
+          />
+        </div>
+      </div>
+
+      {isGenerating && (
+        <div className="mt-4 space-y-2">
+          <div className="flex justify-between text-sm text-ink-muted">
+            <span>{currentStage}</span>
+            <span className="font-medium text-ink">{generationProgress.toFixed(0)}%</span>
           </div>
-          
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-gray-700">
-                Estimated Duration: {videoDuration.toFixed(2)}s
-              </span>
-              <span className="text-sm text-gray-500">
-                {imagesCount} images
-              </span>
-            </div>
-            
-            {isGenerating && (
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">
-                    {stageIcon} {currentStage}
-                  </span>
-                  <span className="text-sm font-medium text-gray-700">
-                    {generationProgress.toFixed(0)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${generationProgress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-          
-          <div className="mt-4">
-            <button
-              onClick={handleGenerateVideo}
-              disabled={isGenerating || imagesCount === 0}
-              className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-            >
-              {isGenerating ? 'Generating...' : 'Generate Video'}
-            </button>
+          <div className="progress-track" role="progressbar" aria-valuenow={generationProgress} aria-valuemin={0} aria-valuemax={100}>
+            <div
+              className="progress-fill"
+              style={{ width: `${generationProgress}%` }}
+            />
           </div>
         </div>
       )}
-    </div>
+
+      <div className="mt-4">
+        <button
+          type="button"
+          onClick={onGenerateVideo}
+          disabled={isGenerating || imagesCount === 0}
+          className="btn-primary w-full py-3 text-base"
+        >
+          {isGenerating ? 'Generating…' : 'Generate Video'}
+        </button>
+      </div>
+    </section>
   );
 }

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { VideoCodec } from '../types';
-import { getAvailableVideoCodecs, getFirstSupportedCodec } from '../lib/imageUtils';
+import { getAvailableVideoCodecs } from '../lib/imageUtils';
 import { CodecService } from '../services/codecService';
 import { getFFmpegCodecs } from '../lib/ffmpegUtils';
+
+const isDev = process.env.NODE_ENV === 'development';
 
 export function useVideoCodecs() {
   const [videoCodecs, setVideoCodecs] = useState<VideoCodec[]>([]);
@@ -13,11 +15,10 @@ export function useVideoCodecs() {
     async function loadCodecs() {
       try {
         setIsLoading(true);
-        
-        // Try FFmpeg codecs first
+
         let codecs: VideoCodec[] = [];
         try {
-          console.log("Loading FFmpeg codecs...");
+          if (isDev) console.log("Loading FFmpeg codecs...");
           const ffmpegCodecs = await getFFmpegCodecs();
           codecs = ffmpegCodecs.map(codec => ({
             name: codec.name,
@@ -25,33 +26,29 @@ export function useVideoCodecs() {
             extension: codec.extension,
             supported: codec.supported
           }));
-          console.log("FFmpeg codecs loaded:", codecs);
+          if (isDev) console.log("FFmpeg codecs loaded:", codecs);
         } catch (error) {
-          console.log("FFmpeg codecs failed, using MediaRecorder fallback:", error);
-          // Fallback to MediaRecorder codecs
+          if (isDev) console.log("FFmpeg codecs failed, using MediaRecorder fallback:", error);
           codecs = getAvailableVideoCodecs();
         }
-        
+
         setVideoCodecs(codecs);
-        
-        // Set default codec to best available one
+
         if (!selectedCodec) {
           const bestCodec = CodecService.getBestCodec(codecs);
           if (bestCodec) {
             setSelectedCodec(bestCodec.mimeType);
-            console.log("Selected default codec:", bestCodec.name);
+            if (isDev) console.log("Selected default codec:", bestCodec.name);
           } else {
-            // Fallback to VP8 if no H.264 support
             const fallbackCodec = CodecService.getFallbackCodec(codecs);
             if (fallbackCodec) {
               setSelectedCodec(fallbackCodec.mimeType);
-              console.log("Selected fallback codec:", fallbackCodec.name);
+              if (isDev) console.log("Selected fallback codec:", fallbackCodec.name);
             }
           }
         }
       } catch (error) {
         console.error("Error loading codecs:", error);
-        // Final fallback
         const fallbackCodecs = getAvailableVideoCodecs();
         setVideoCodecs(fallbackCodecs);
         if (!selectedCodec && fallbackCodecs.length > 0) {
@@ -63,7 +60,7 @@ export function useVideoCodecs() {
     }
 
     loadCodecs();
-  }, []); // Remove selectedCodec from dependencies to prevent infinite loop
+  }, []);
 
   const getSelectedCodecInfo = () => {
     return videoCodecs.find(codec => codec.mimeType === selectedCodec);

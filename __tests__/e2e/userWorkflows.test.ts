@@ -7,7 +7,7 @@ test.describe('User Workflows E2E Tests', () => {
     await page.goto('/');
     
     // Wait for the app to load
-    await page.waitForSelector('text=A Simple Image Sequence to Video Converter');
+    await page.waitForSelector('text=Drop stills. Export video. All in your browser.');
   });
 
   test.describe('Complete Video Generation Workflow', () => {
@@ -262,7 +262,7 @@ test.describe('User Workflows E2E Tests', () => {
       await page.goto('/');
       
       // Verify app loads on mobile
-      await expect(page.locator('text=A Simple Image Sequence to Video Converter')).toBeVisible();
+      await expect(page.locator('text=Drop stills. Export video. All in your browser.')).toBeVisible();
       await expect(page.locator('[data-testid="upload-zone"]')).toBeVisible();
     });
 
@@ -274,7 +274,7 @@ test.describe('User Workflows E2E Tests', () => {
       await page.goto('/');
       
       // Verify app loads on tablet
-      await expect(page.locator('text=A Simple Image Sequence to Video Converter')).toBeVisible();
+      await expect(page.locator('text=Drop stills. Export video. All in your browser.')).toBeVisible();
       await expect(page.locator('[data-testid="upload-zone"]')).toBeVisible();
     });
   });
@@ -284,7 +284,7 @@ test.describe('User Workflows E2E Tests', () => {
       const startTime = Date.now();
       
       await page.goto('/');
-      await page.waitForSelector('text=A Simple Image Sequence to Video Converter');
+      await page.waitForSelector('text=Drop stills. Export video. All in your browser.');
       
       const loadTime = Date.now() - startTime;
       

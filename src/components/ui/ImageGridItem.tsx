@@ -36,37 +36,41 @@ export const ImageGridItem = memo(function ImageGridItem({
 
   return (
     <div
-      draggable={sortOption === "manual"}
+      draggable={sortOption === 'manual'}
       onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
       onDragOver={handleDragOver}
-      className={`relative group border-2 rounded-lg overflow-hidden ${
-        sortOption === "manual" ? "cursor-move" : ""
-      } ${isDragged ? "opacity-50" : ""} hover:border-blue-300 transition-colors`}
+      className={`grid-enter group relative overflow-hidden rounded-md border border-line bg-paper-elevated transition-colors ${
+        sortOption === 'manual' ? 'cursor-move' : ''
+      } ${isDragged ? 'opacity-50' : ''} hover:border-ink-muted`}
+      style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}
     >
       <div className="aspect-square">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={image.url}
           alt={image.name}
-          className="w-full h-full object-cover"
+          className="h-full w-full object-cover"
           loading="lazy"
         />
       </div>
-      
-      <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+
+      <div className="absolute left-2 top-2 rounded bg-ink/80 px-2 py-0.5 text-xs font-medium text-white">
         {index + 1}
       </div>
-      
+
       <button
+        type="button"
         onClick={handleRemove}
-        className="absolute top-2 right-2 bg-red-600 text-white w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
+        aria-label={`Remove ${image.name}`}
+        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-accent text-sm font-bold text-white opacity-100 transition-opacity hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
       >
         ×
       </button>
-      
-      <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-xs p-2">
+
+      <div className="absolute bottom-0 left-0 right-0 bg-ink/75 p-2 text-xs text-white">
         <div className="truncate">{image.name}</div>
-        <div>{(image.size / 1024).toFixed(1)} KB</div>
+        <div className="text-white/70">{(image.size / 1024).toFixed(1)} KB</div>
       </div>
     </div>
   );

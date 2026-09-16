@@ -161,7 +161,7 @@ class FFmpegWorker {
       
       // Send the video data
       this.sendSuccess(id, { 
-        videoBlob: new Blob([data], { type: `video/${outputFormat}` }),
+        videoBlob: new Blob([data as BlobPart], { type: `video/${outputFormat}` }),
         format: outputFormat
       });
     } catch (error) {
@@ -203,7 +203,7 @@ class FFmpegWorker {
         // Ignore cleanup errors
       }
 
-      const thumbnailBlob = new Blob([thumbnailData], { type: 'image/jpeg' });
+      const thumbnailBlob = new Blob([thumbnailData as BlobPart], { type: 'image/jpeg' });
       this.sendSuccess(id, { thumbnailBlob });
     } catch (error) {
       this.sendError(id, `Thumbnail creation failed: ${error}`);

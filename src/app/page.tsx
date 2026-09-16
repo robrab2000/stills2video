@@ -3,54 +3,51 @@ import { PerformanceMonitor } from '../components/ui/PerformanceMonitor';
 
 export default function Home() {
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm h-16 flex justify-center items-center border-b shadow-sm px-4">
-        <h2 className="text-2xl font-semibold">Stills-2-Video Converter</h2>
-      </header>
-      
-      <main className="flex-1 p-4">
-        <div className="max-w-6xl mx-auto">
+    <div className="relative z-10 flex min-h-screen flex-col">
+      <main className="flex-1 px-4 py-6 md:px-6 md:py-10">
+        <div className="mx-auto max-w-6xl">
           <ImageToVideoConverter />
         </div>
       </main>
 
-      <footer className="bg-gray-100 py-4 px-4 text-center text-xs text-gray-600 border-t">
+      <footer className="border-t border-line px-4 py-5 text-center text-xs text-ink-muted">
         <span>
           &copy; {new Date().getFullYear()}{" "}
           <a
             href="https://robhomewood.co.uk"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline"
+            className="text-ink underline-offset-2 hover:underline"
           >
             Rob Homewood
           </a>
-          {" | "}
+          {" · "}
           <a
             href="https://github.com/robrab2000/stills2video"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline"
+            className="text-ink underline-offset-2 hover:underline"
           >
             GitHub
           </a>
-          {" | "}
+          {" · "}
           <a
             href="https://opensource.org/licenses/MIT"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline"
+            className="text-ink underline-offset-2 hover:underline"
           >
-            MIT License
+            MIT
           </a>
+          {" · "}
+          <span className="text-ink-faint">Processing stays on your device</span>
         </span>
       </footer>
 
-      {/* Performance Monitor - Development Only */}
-      <PerformanceMonitor 
-        enabled={process.env.NODE_ENV === 'development'} 
+      <PerformanceMonitor
+        enabled={process.env.NODE_ENV === 'development'}
         showDetails={false}
       />
     </div>
   );
-} 
+}

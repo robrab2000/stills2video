@@ -2,8 +2,9 @@ import { useCallback } from 'react';
 import { toast } from 'sonner';
 import { ImageFile, SortOption } from '../types';
 import { FileService } from '../services/fileService';
-import { sortImages } from '../lib/imageUtils';
 import { useAppDispatch } from '../contexts/AppContext';
+
+const isDev = process.env.NODE_ENV === 'development';
 
 export function useImageManager(
   images: ImageFile[],
@@ -14,12 +15,12 @@ export function useImageManager(
 
   const handleFileSelect = useCallback((files: FileList) => {
     try {
-      console.log('🖼️ handleFileSelect called with', files.length, 'files');
+      if (isDev) {
+        console.log('handleFileSelect called with', files.length, 'files');
+      }
       const result = FileService.processFileList(files);
-      console.log('📁 FileService result:', result);
       
       if (result.images.length > 0) {
-        console.log('✅ Dispatching ADD_IMAGES with', result.images.length, 'images');
         dispatch({ type: 'ADD_IMAGES', payload: result.images });
         toast.success(`Added ${result.images.length} images`);
       }
@@ -30,7 +31,7 @@ export function useImageManager(
         });
       }
     } catch (error) {
-      console.error('❌ Error in handleFileSelect:', error);
+      console.error('Error in handleFileSelect:', error);
       toast.error('Failed to process images');
     }
   }, [dispatch]);
@@ -61,14 +62,9 @@ export function useImageManager(
   const handleSortOptionChange = useCallback((option: SortOption) => {
     onSortOptionChange(option);
     if (option !== 'manual') {
-      const sortedImages = sortImages(images, option);
-      // For sorting, we need to replace the entire images array
-      // This is a bit of a hack since we don't have a REPLACE_IMAGES action
-      // We'll clear and re-add
-      dispatch({ type: 'CLEAR_ALL_IMAGES' });
-      dispatch({ type: 'ADD_IMAGES', payload: sortedImages });
+      dispatch({ type: 'SORT_IMAGES', payload: option });
     }
-  }, [images, onSortOptionChange, dispatch]);
+  }, [onSortOptionChange, dispatch]);
 
   const handleDragOverItem = useCallback((
     e: React.DragEvent,
