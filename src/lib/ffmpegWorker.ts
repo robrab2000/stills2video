@@ -93,22 +93,33 @@ class FFmpegWorker {
       
       // Stage 2: Processing images (10-30%)
       this.sendProgress(id, 10, 'Processing images...');
-      
-      // Write image files to FFmpeg
+
+      const writtenNames: string[] = [];
       for (let i = 0; i < imageFiles.length; i++) {
-        const imageData = await fetchFile(imageFiles[i]);
-        await this.ffmpeg.writeFile(`image_${i.toString().padStart(4, '0')}.jpg`, imageData);
+        const file = imageFiles[i];
+        const name = file.name?.toLowerCase?.() || '';
+        const type = file.type || '';
+        let ext = 'jpg';
+        if (name.endsWith('.png') || type === 'image/png') ext = 'png';
+        else if (name.endsWith('.webp') || type === 'image/webp') ext = 'webp';
+        else if (name.endsWith('.gif') || type === 'image/gif') ext = 'gif';
+        else if (name.endsWith('.bmp') || type === 'image/bmp') ext = 'bmp';
+
+        const fileName = `image_${i.toString().padStart(4, '0')}.${ext}`;
+        const imageData = await fetchFile(file);
+        await this.ffmpeg.writeFile(fileName, imageData);
+        writtenNames.push(fileName);
         
-        // Update progress for image processing
         const imageProgress = 10 + (i / imageFiles.length) * 20;
         this.sendProgress(id, imageProgress, `Processing image ${i + 1}/${imageFiles.length}...`);
       }
 
-      // Create input file list
-      const inputList = imageFiles.map((_, i) => 
-        `file 'image_${i.toString().padStart(4, '0')}.jpg'`
-      ).join('\n');
-      await this.ffmpeg.writeFile('input.txt', inputList);
+      const imageDuration = 1 / settings.fps;
+      let concatContent = writtenNames
+        .map((name) => `file '${name}'\nduration ${imageDuration}`)
+        .join('\n');
+      concatContent += `\nfile '${writtenNames[writtenNames.length - 1]}'`;
+      await this.ffmpeg.writeFile('concat.txt', concatContent);
 
       // Stage 3: Encoding preparation (30-40%)
       this.sendProgress(id, 30, 'Preparing video encoding...');
@@ -118,31 +129,30 @@ class FFmpegWorker {
       const outputFormat = isH264 ? 'mp4' : 'webm';
       const codec = isH264 ? 'libx264' : (settings.codec.includes('vp9') ? 'libvpx-vp9' : 'libvpx');
 
-      // Build base FFmpeg command
+      const outW = Math.max(2, Math.round(settings.width / 2) * 2);
+      const outH = Math.max(2, Math.round(settings.height / 2) * 2);
+      const scaleFilter = `scale=${outW}:${outH}:force_original_aspect_ratio=decrease,pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2`;
+
+      // Build base FFmpeg command — do not inject broken thread flags into mid-command
       const baseCommand = [
         '-f', 'concat',
         '-safe', '0',
-        '-i', 'input.txt',
+        '-i', 'concat.txt',
+        '-vf', scaleFilter,
         '-c:v', codec,
         '-pix_fmt', 'yuv420p',
         '-r', settings.fps.toString(),
-        '-s', `${settings.width}x${settings.height}`,
-        '-y', // Overwrite output
+        '-y',
         `output.${outputFormat}`
       ];
 
-      // Add multithreading optimization flags
-      const optimizedCommand = this.addMultithreadingFlags(baseCommand);
-
-      console.log('FFmpeg command:', optimizedCommand.join(' '));
+      console.log('FFmpeg command:', baseCommand.join(' '));
 
       // Stage 4: Video encoding (40-90%)
       this.sendProgress(id, 40, 'Encoding video...');
       
-      // Execute FFmpeg command
-      await this.ffmpeg.exec(optimizedCommand);
+      await this.ffmpeg.exec(baseCommand);
       
-      // Simulate encoding progress (since FFmpeg doesn't provide real-time progress)
       for (let i = 40; i <= 90; i += 10) {
         await new Promise(resolve => setTimeout(resolve, 100));
         this.sendProgress(id, i, 'Encoding video...');
@@ -151,15 +161,12 @@ class FFmpegWorker {
       // Stage 5: Finalizing (90-100%)
       this.sendProgress(id, 90, 'Finalizing video...');
       
-      // Read the output file
       const data = await this.ffmpeg.readFile(`output.${outputFormat}`);
       
-      // Clean up files
-      await this.cleanupFiles(imageFiles.length, outputFormat);
+      await this.cleanupFiles(writtenNames, outputFormat);
 
       this.sendProgress(id, 100, 'Video generation complete!');
       
-      // Send the video data
       this.sendSuccess(id, { 
         videoBlob: new Blob([data as BlobPart], { type: `video/${outputFormat}` }),
         format: outputFormat
@@ -275,21 +282,24 @@ class FFmpegWorker {
     ];
   }
 
-  private async cleanupFiles(imageCount: number, outputFormat: string) {
+  private async cleanupFiles(writtenNames: string[] | number, outputFormat: string) {
     if (!this.ffmpeg) return;
 
-    // Clean up image files
-    for (let i = 0; i < imageCount; i++) {
+    const names = Array.isArray(writtenNames)
+      ? writtenNames
+      : Array.from({ length: writtenNames }, (_, i) => `image_${i.toString().padStart(4, '0')}.jpg`);
+
+    for (const name of names) {
       try {
-        await this.ffmpeg.deleteFile(`image_${i.toString().padStart(4, '0')}.jpg`);
+        await this.ffmpeg.deleteFile(name);
       } catch (e) {
         // Ignore cleanup errors
       }
     }
 
-    // Clean up other files
     try {
       await this.ffmpeg.deleteFile('input.txt');
+      await this.ffmpeg.deleteFile('concat.txt');
       await this.ffmpeg.deleteFile(`output.${outputFormat}`);
     } catch (e) {
       // Ignore cleanup errors

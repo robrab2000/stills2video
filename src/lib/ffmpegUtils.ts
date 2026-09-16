@@ -9,6 +9,7 @@ import {
   detectBrowserCapabilities 
 } from './browserCapabilities';
 import { isMultithreadingAvailable, ffmpegWorkerManager } from './ffmpegWorkerManager';
+import { fitExportDimensions, getImageFileExtension } from './exportDimensions';
 
 export interface FFmpegCodec {
   name: string;
@@ -101,16 +102,24 @@ export class FFmpegManager {
     const startTime = performance.now();
     const isMultithreaded = this.getMultithreadingEnabled();
     const threadCount = getOptimalThreadCount();
+    const exportSize = fitExportDimensions(settings.width, settings.height);
+    const outputWidth = exportSize.width;
+    const outputHeight = exportSize.height;
+    const writtenNames: string[] = [];
 
     try {
       console.log(`🚀 Starting video generation: ${imageFiles.length} images, ${isMultithreaded ? 'multithreaded' : 'single-threaded'} (${threadCount} threads)`);
+      console.log(`📐 Output size: ${outputWidth}x${outputHeight}${exportSize.scaled ? ' (clamped)' : ''}`);
       
       // Stage 1: Write image files (0-30%)
       if (onProgress) onProgress(5, 'Loading images...');
       
       for (let i = 0; i < imageFiles.length; i++) {
+        const ext = getImageFileExtension(imageFiles[i]);
+        const fileName = `image_${i.toString().padStart(4, '0')}.${ext}`;
         const imageData = await fetchFile(imageFiles[i]);
-        await this.ffmpeg.writeFile(`image_${i.toString().padStart(4, '0')}.jpg`, imageData);
+        await this.ffmpeg.writeFile(fileName, imageData);
+        writtenNames.push(fileName);
         
         if (onProgress) {
           const progress = 5 + (i / imageFiles.length) * 25;
@@ -121,11 +130,11 @@ export class FFmpegManager {
       // Verify input files were written correctly
       try {
         const files = await this.ffmpeg.listDir('/');
-        const imageFiles = files.filter((file: any) => file.name && file.name.startsWith('image_'));
+        const listedImages = files.filter((file: any) => file.name && file.name.startsWith('image_'));
         console.log('📁 FFmpeg filesystem contents:', files.map((f: any) => f.name));
-        console.log('🖼️ Input image files found:', imageFiles.length);
+        console.log('🖼️ Input image files found:', listedImages.length);
         
-        if (imageFiles.length === 0) {
+        if (listedImages.length === 0) {
           throw new Error('No input image files found in FFmpeg filesystem');
         }
       } catch (listError) {
@@ -137,19 +146,17 @@ export class FFmpegManager {
 
       // Stage 2: Generate video with multithreading optimization
       const isH264 = settings.codec.includes('h264') || settings.codec.includes('avc');
-      const outputFormat = isH264 ? 'mp4' : 'webm';
       const codec = isH264 ? 'libx264' : 'libvpx';
       
       // Create a concat file for more reliable input
       // Each image should be displayed for 1/fps seconds
       const imageDuration = 1 / settings.fps;
-      let concatContent = imageFiles.map((_, i) => 
-        `file 'image_${i.toString().padStart(4, '0')}.jpg'\nduration ${imageDuration}`
+      let concatContent = writtenNames.map((name) => 
+        `file '${name}'\nduration ${imageDuration}`
       ).join('\n');
       
       // Add the last image again without duration to ensure it's included
-      const lastImageIndex = imageFiles.length - 1;
-      concatContent += `\nfile 'image_${lastImageIndex.toString().padStart(4, '0')}.jpg'`;
+      concatContent += `\nfile '${writtenNames[writtenNames.length - 1]}'`;
       
       await this.ffmpeg.writeFile('concat.txt', concatContent);
       console.log('📝 Created concat file:', concatContent);
@@ -163,19 +170,22 @@ export class FFmpegManager {
         console.error('❌ Failed to verify concat file:', e);
       }
       
-      // Use concat demuxer with proper duration handling
+      // Scale/pad to export size so huge stills don't encode at native resolution
+      const scaleFilter = `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease,pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2`;
+
       const baseCommand = [
         '-f', 'concat',
         '-safe', '0',
         '-i', 'concat.txt',
+        '-vf', scaleFilter,
         '-c:v', codec,
         '-pix_fmt', 'yuv420p',
-        '-r', settings.fps.toString(), // Set output frame rate
+        '-r', settings.fps.toString(),
         '-preset', 'medium',
         '-crf', '23',
-        '-movflags', '+faststart', // Optimize for web playback
+        '-movflags', '+faststart',
         '-y',
-        'output.mp4' // Always use MP4 for now to ensure compatibility
+        'output.mp4'
       ];
 
       // Apply multithreading optimization if enabled
@@ -185,7 +195,7 @@ export class FFmpegManager {
 
       console.log('🎬 FFmpeg command:', optimizedCommand.join(' '));
       console.log(`🔧 Using ${this.getMultithreadingEnabled() ? 'multithreaded' : 'single-threaded'} processing with ${getOptimalThreadCount()} threads`);
-      console.log('📁 Input files:', imageFiles.map((_, i) => `image_${i.toString().padStart(4, '0')}.jpg`));
+      console.log('📁 Input files:', writtenNames);
       
       const encodingStartTime = performance.now();
       try {
@@ -317,7 +327,7 @@ export class FFmpegManager {
       if (onProgress) onProgress(90, 'Cleaning up...');
 
       // Stage 4: Cleanup
-      await this.cleanupFiles(imageFiles.length, 'mp4');
+      await this.cleanupFiles(writtenNames, 'mp4');
 
       if (onProgress) onProgress(100, 'Complete');
 
@@ -339,12 +349,16 @@ export class FFmpegManager {
     }
   }
 
-  private async cleanupFiles(imageCount: number, outputFormat: string) {
+  private async cleanupFiles(writtenNames: string[] | number, outputFormat: string) {
     if (!this.ffmpeg) return;
+
+    const names = Array.isArray(writtenNames)
+      ? writtenNames
+      : Array.from({ length: writtenNames }, (_, i) => `image_${i.toString().padStart(4, '0')}.jpg`);
     
-    for (let i = 0; i < imageCount; i++) {
+    for (const name of names) {
       try {
-        await this.ffmpeg.deleteFile(`image_${i.toString().padStart(4, '0')}.jpg`);
+        await this.ffmpeg.deleteFile(name);
       } catch (e) {
         // Ignore cleanup errors
       }

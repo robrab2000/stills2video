@@ -108,7 +108,8 @@ export function ImageToVideoConverter() {
       toast.success("Video generated successfully");
     } catch (error) {
       console.error("Error generating video:", error);
-      toast.error("Failed to generate video");
+      const message = error instanceof Error ? error.message : "Failed to generate video";
+      toast.error(message.length > 180 ? `${message.slice(0, 177)}…` : message);
     } finally {
       setUIState({ isGenerating: false, generationProgress: 0 });
     }

@@ -1,5 +1,7 @@
 import { useMemo, useCallback, useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { VideoCodec, VideoSettings as VideoSettingsType, SortOption, ImageFile } from '../../types';
+import { fitExportDimensions } from '../../lib/exportDimensions';
 
 type ResolutionPreset = 'match' | '1080p' | '720p' | 'custom';
 
@@ -18,8 +20,11 @@ interface VideoSettingsProps {
 
 function detectPreset(width: number, height: number, images: ImageFile[]): ResolutionPreset {
   const first = images[0];
-  if (first?.width && first?.height && width === first.width && height === first.height) {
-    return 'match';
+  if (first?.width && first?.height) {
+    const fitted = fitExportDimensions(first.width, first.height);
+    if (width === fitted.width && height === fitted.height) {
+      return 'match';
+    }
   }
   if (width === 1920 && height === 1080) return '1080p';
   if (width === 1280 && height === 720) return '720p';
@@ -76,29 +81,38 @@ export function VideoSettings({
 
   const handleWidthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setPreset('custom');
-    handleSettingChange('videoWidth', parseInt(e.target.value, 10));
-  }, [handleSettingChange]);
+    const fitted = fitExportDimensions(parseInt(e.target.value, 10) || 1920, settings.videoHeight);
+    onSettingsChange({ videoWidth: fitted.width, videoHeight: fitted.height });
+  }, [onSettingsChange, settings.videoHeight]);
 
   const handleHeightChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setPreset('custom');
-    handleSettingChange('videoHeight', parseInt(e.target.value, 10));
-  }, [handleSettingChange]);
+    const fitted = fitExportDimensions(settings.videoWidth, parseInt(e.target.value, 10) || 1080);
+    onSettingsChange({ videoWidth: fitted.width, videoHeight: fitted.height });
+  }, [onSettingsChange, settings.videoWidth]);
 
   const applyMatchFirst = useCallback(() => {
     const first = images[0];
     if (!first) return;
 
+    const applySize = (width: number, height: number) => {
+      const fitted = fitExportDimensions(width, height);
+      onSettingsChange({ videoWidth: fitted.width, videoHeight: fitted.height });
+      if (fitted.scaled) {
+        toast.message(`Export size limited to ${fitted.width}×${fitted.height}`, {
+          description: 'Source stills are larger than the max encode size.',
+        });
+      }
+    };
+
     if (first.width && first.height) {
-      onSettingsChange({ videoWidth: first.width, videoHeight: first.height });
+      applySize(first.width, first.height);
       return;
     }
 
     const img = new window.Image();
     img.onload = () => {
-      onSettingsChange({
-        videoWidth: img.naturalWidth,
-        videoHeight: img.naturalHeight,
-      });
+      applySize(img.naturalWidth, img.naturalHeight);
     };
     img.src = first.url;
   }, [images, onSettingsChange]);
@@ -124,17 +138,24 @@ export function VideoSettings({
     if (preset !== 'match') return;
     const first = images[0];
     if (first?.width && first?.height) {
-      if (settings.videoWidth !== first.width || settings.videoHeight !== first.height) {
-        onSettingsChange({ videoWidth: first.width, videoHeight: first.height });
+      const fitted = fitExportDimensions(first.width, first.height);
+      if (settings.videoWidth !== fitted.width || settings.videoHeight !== fitted.height) {
+        onSettingsChange({ videoWidth: fitted.width, videoHeight: fitted.height });
       }
     }
   }, [preset, images, settings.videoWidth, settings.videoHeight, onSettingsChange]);
 
   if (imagesCount === 0) return null;
 
-  const matchLabel = images[0]?.width && images[0]?.height
-    ? `Match first (${images[0].width}×${images[0].height})`
-    : 'Match first image';
+  const matchLabel = (() => {
+    const first = images[0];
+    if (!first?.width || !first?.height) return 'Match first image';
+    const fitted = fitExportDimensions(first.width, first.height);
+    if (fitted.scaled) {
+      return `Match first (fit ${fitted.width}×${fitted.height})`;
+    }
+    return `Match first (${fitted.width}×${fitted.height})`;
+  })();
 
   return (
     <section className="surface p-4 md:p-5" aria-labelledby="export-heading" data-testid="video-settings">

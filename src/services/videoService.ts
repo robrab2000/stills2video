@@ -1,6 +1,7 @@
 import { ImageFile, VideoSettings, VideoPreview } from '../types';
 import { validateVideoGeneration } from '../lib/validation';
 import { generateId } from '../lib/uiUtils';
+import { fitExportDimensions } from '../lib/exportDimensions';
 import { 
   getFFmpegManager, 
   generateVideoWithFFmpeg,
@@ -15,6 +16,17 @@ import {
 
 const isDev = process.env.NODE_ENV === 'development';
 
+async function safeThumbnail(
+  create: () => Promise<string>
+): Promise<string | undefined> {
+  try {
+    return await create();
+  } catch (error) {
+    console.warn('Thumbnail creation failed; continuing without thumbnail:', error);
+    return undefined;
+  }
+}
+
 export class VideoService {
   static async generateVideo(
     images: ImageFile[],
@@ -23,8 +35,15 @@ export class VideoService {
     videoCodecs: any[],
     onProgress?: (progress: number) => void
   ): Promise<VideoPreview> {
+    const fitted = fitExportDimensions(settings.videoWidth, settings.videoHeight);
+    const encodeSettings: VideoSettings = {
+      ...settings,
+      videoWidth: fitted.width,
+      videoHeight: fitted.height,
+    };
+
     // Validate inputs using the new validation utility
-    const validation = validateVideoGeneration(images, settings, selectedCodec);
+    const validation = validateVideoGeneration(images, encodeSettings, selectedCodec);
     if (!validation.isValid) {
       throw new Error(`Video generation validation failed: ${validation.errors.join(', ')}`);
     }
@@ -39,9 +58,9 @@ export class VideoService {
     if (isDev) console.log('🎬 Video generation started:', {
       imageCount: images.length,
       settings: {
-        fps: settings.fps,
-        width: settings.videoWidth,
-        height: settings.videoHeight,
+        fps: encodeSettings.fps,
+        width: encodeSettings.videoWidth,
+        height: encodeSettings.videoHeight,
         codec: selectedCodec
       },
       multithreading: {
@@ -53,17 +72,14 @@ export class VideoService {
     
     if (useMultithreading) {
       try {
-        // Use multithreaded FFmpeg processing
         if (isDev) console.log("🚀 Using multithreaded FFmpeg processing");
         
-        // Extract File objects from ImageFile array
         const imageFiles = images.map(img => img.file);
         
-        // Generate video using multithreaded FFmpeg with progress callback
         const videoBlob = await generateVideoWithMultithreading(imageFiles, {
-          fps: settings.fps,
-          width: settings.videoWidth,
-          height: settings.videoHeight,
+          fps: encodeSettings.fps,
+          width: encodeSettings.videoWidth,
+          height: encodeSettings.videoHeight,
           codec: selectedCodec
         }, (progress, stage) => {
           if (isDev) console.log(`🚀 Multithreaded FFmpeg progress: ${progress}% - ${stage}`);
@@ -72,7 +88,6 @@ export class VideoService {
 
         if (isDev) console.log("✅ Multithreaded video generation completed successfully");
 
-        // Create video preview object
         const url = URL.createObjectURL(videoBlob);
         const selectedCodecInfo = videoCodecs.find((codec: any) => codec.mimeType === selectedCodec);
         const extension = selectedCodecInfo?.extension || (selectedCodec.includes("mp4") ? "mp4" : "webm");
@@ -80,10 +95,7 @@ export class VideoService {
         const timestamp = Date.now();
         const videoName = `video_${timestamp}_${videoId}.${extension}`;
         
-        // Create thumbnail using multithreaded FFmpeg
-        if (isDev) console.log("🖼️ Creating thumbnail with multithreaded FFmpeg...");
-        const thumbnailUrl = await createThumbnailWithMultithreading(videoBlob);
-        if (isDev) console.log("✅ Thumbnail created successfully");
+        const thumbnailUrl = await safeThumbnail(() => createThumbnailWithMultithreading(videoBlob));
         
         return {
           id: videoId,
@@ -93,26 +105,24 @@ export class VideoService {
           blob: videoBlob,
           extension,
           size: videoBlob.size,
-          duration: images.length / settings.fps,
+          duration: images.length / encodeSettings.fps,
           format: extension,
           codec: selectedCodec,
           timestamp,
           settings: {
-            fps: settings.fps,
-            videoWidth: settings.videoWidth,
-            videoHeight: settings.videoHeight,
+            fps: encodeSettings.fps,
+            videoWidth: encodeSettings.videoWidth,
+            videoHeight: encodeSettings.videoHeight,
             selectedCodec: selectedCodec
           }
         };
       } catch (error) {
         console.error('❌ Multithreaded FFmpeg failed, falling back to main thread:', error);
-        // Fall back to main thread processing
-        return this.generateVideoWithMainThread(images, settings, selectedCodec, videoCodecs, onProgress);
+        return this.generateVideoWithMainThread(images, encodeSettings, selectedCodec, videoCodecs, onProgress);
       }
     } else {
-      // Use main thread FFmpeg processing
       if (isDev) console.log("🔄 Using main thread FFmpeg processing");
-      return this.generateVideoWithMainThread(images, settings, selectedCodec, videoCodecs, onProgress);
+      return this.generateVideoWithMainThread(images, encodeSettings, selectedCodec, videoCodecs, onProgress);
     }
   }
 
@@ -164,8 +174,8 @@ export class VideoService {
         
         // Create thumbnail using FFmpeg
         if (isDev) console.log("🖼️ Creating thumbnail with main thread FFmpeg...");
-        const thumbnailUrl = await this.createThumbnail(videoBlob);
-        if (isDev) console.log("✅ Thumbnail created successfully");
+        const thumbnailUrl = await safeThumbnail(() => this.createThumbnail(videoBlob));
+        if (isDev && thumbnailUrl) console.log("✅ Thumbnail created successfully");
         
         return {
           id: videoId,
@@ -249,8 +259,8 @@ export class VideoService {
             const extension = supportedCodec.extension;
             const videoName = `video_${timestamp}_${videoId}.${extension}`;
 
-            // Create thumbnail
-            const thumbnailUrl = await this.createThumbnail(videoBlob);
+            // Create thumbnail (optional — don't fail the export if it breaks)
+            const thumbnailUrl = await safeThumbnail(() => this.createThumbnail(videoBlob));
 
             resolve({
               id: videoId,
