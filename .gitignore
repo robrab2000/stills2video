@@ -101,7 +101,6 @@ $RECYCLE.BIN/
 *.lnk
 
 # Node.js Ecosystem Specific
-package-lock.json
 jspm_packages/
 web_modules/ # Snowpack dependency directory
 *.tsbuildinfo # TypeScript cache
