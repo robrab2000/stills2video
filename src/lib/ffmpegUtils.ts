@@ -105,246 +105,127 @@ export class FFmpegManager {
     const exportSize = fitExportDimensions(settings.width, settings.height);
     const outputWidth = exportSize.width;
     const outputHeight = exportSize.height;
-    const writtenNames: string[] = [];
+
+    // Keep only a few source files in WASM MEMFS at a time (critical for multi-GB folders)
+    const CHUNK_SIZE = 8;
+    const isH264 = settings.codec.includes('h264') || settings.codec.includes('avc');
+    const codec = isH264 ? 'libx264' : 'libvpx';
+    const imageDuration = 1 / settings.fps;
+    const scaleFilter = `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease,pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2`;
+    const segmentNames: string[] = [];
 
     try {
-      console.log(`🚀 Starting video generation: ${imageFiles.length} images, ${isMultithreaded ? 'multithreaded' : 'single-threaded'} (${threadCount} threads)`);
+      console.log(`🚀 Starting chunked video generation: ${imageFiles.length} images, chunk=${CHUNK_SIZE}, ${isMultithreaded ? 'multithreaded' : 'single-threaded'} (${threadCount} threads)`);
       console.log(`📐 Output size: ${outputWidth}x${outputHeight}${exportSize.scaled ? ' (clamped)' : ''}`);
-      
-      // Stage 1: Write image files (0-30%)
-      if (onProgress) onProgress(5, 'Loading images...');
-      
-      for (let i = 0; i < imageFiles.length; i++) {
-        const ext = getImageFileExtension(imageFiles[i]);
-        const fileName = `image_${i.toString().padStart(4, '0')}.${ext}`;
-        const imageData = await fetchFile(imageFiles[i]);
-        await this.ffmpeg.writeFile(fileName, imageData);
-        writtenNames.push(fileName);
-        
-        if (onProgress) {
-          const progress = 5 + (i / imageFiles.length) * 25;
-          onProgress(Math.round(progress), `Processing image ${i + 1}/${imageFiles.length}`);
-        }
-      }
 
-      // Verify input files were written correctly
-      try {
-        const files = await this.ffmpeg.listDir('/');
-        const listedImages = files.filter((file: any) => file.name && file.name.startsWith('image_'));
-        console.log('📁 FFmpeg filesystem contents:', files.map((f: any) => f.name));
-        console.log('🖼️ Input image files found:', listedImages.length);
-        
-        if (listedImages.length === 0) {
-          throw new Error('No input image files found in FFmpeg filesystem');
-        }
-      } catch (listError) {
-        console.error('❌ Failed to list FFmpeg files:', listError);
-        throw new Error('Failed to verify input files in FFmpeg filesystem');
-      }
-
-      if (onProgress) onProgress(30, 'Generating video...');
-
-      // Stage 2: Generate video with multithreading optimization
-      const isH264 = settings.codec.includes('h264') || settings.codec.includes('avc');
-      const codec = isH264 ? 'libx264' : 'libvpx';
-      
-      // Create a concat file for more reliable input
-      // Each image should be displayed for 1/fps seconds
-      const imageDuration = 1 / settings.fps;
-      let concatContent = writtenNames.map((name) => 
-        `file '${name}'\nduration ${imageDuration}`
-      ).join('\n');
-      
-      // Add the last image again without duration to ensure it's included
-      concatContent += `\nfile '${writtenNames[writtenNames.length - 1]}'`;
-      
-      await this.ffmpeg.writeFile('concat.txt', concatContent);
-      console.log('📝 Created concat file:', concatContent);
-      console.log(`⏱️ Each image duration: ${imageDuration}s (${settings.fps} fps)`);
-      
-      // Verify concat file was written
-      try {
-        const concatFileData = await this.ffmpeg.readFile('concat.txt');
-        console.log('✅ Concat file verified, content:', concatFileData);
-      } catch (e) {
-        console.error('❌ Failed to verify concat file:', e);
-      }
-      
-      // Scale/pad to export size so huge stills don't encode at native resolution
-      const scaleFilter = `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease,pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2`;
-
-      const baseCommand = [
-        '-f', 'concat',
-        '-safe', '0',
-        '-i', 'concat.txt',
-        '-vf', scaleFilter,
-        '-c:v', codec,
-        '-pix_fmt', 'yuv420p',
-        '-r', settings.fps.toString(),
-        '-preset', 'medium',
-        '-crf', '23',
-        '-movflags', '+faststart',
-        '-y',
-        'output.mp4'
-      ];
-
-      // Apply multithreading optimization if enabled
-      const optimizedCommand = this.getMultithreadingEnabled() 
-        ? createOptimizedFFmpegCommand(baseCommand, false) // Temporarily disable optimization
-        : baseCommand;
-
-      console.log('🎬 FFmpeg command:', optimizedCommand.join(' '));
-      console.log(`🔧 Using ${this.getMultithreadingEnabled() ? 'multithreaded' : 'single-threaded'} processing with ${getOptimalThreadCount()} threads`);
-      console.log('📁 Input files:', writtenNames);
-      
       const encodingStartTime = performance.now();
-      try {
-        console.log('🚀 Starting FFmpeg execution...');
-        await this.ffmpeg.exec(optimizedCommand);
-        console.log('✅ FFmpeg execution completed successfully');
-        
-        // Check if output file was actually created
-        try {
-          const files = await this.ffmpeg.listDir('/');
-          const outputFile = files.find((file: any) => file.name === 'output.mp4');
-          console.log('📁 Files after FFmpeg execution:', files.map((f: any) => f.name));
-          console.log('🎬 Output file found:', !!outputFile);
-        } catch (listError) {
-          console.warn('⚠️ Could not list files after FFmpeg execution:', listError);
+      const totalChunks = Math.ceil(imageFiles.length / CHUNK_SIZE);
+
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * CHUNK_SIZE;
+        const chunk = imageFiles.slice(start, start + CHUNK_SIZE);
+        const writtenNames: string[] = [];
+
+        if (onProgress) {
+          const base = 5 + (chunkIndex / totalChunks) * 70;
+          onProgress(Math.round(base), `Encoding chunk ${chunkIndex + 1}/${totalChunks}`);
         }
-      } catch (execError) {
-        console.error('❌ FFmpeg execution failed:', execError);
-        throw execError;
+
+        for (let i = 0; i < chunk.length; i++) {
+          const ext = getImageFileExtension(chunk[i]);
+          const fileName = `image_${i.toString().padStart(4, '0')}.${ext}`;
+          const imageData = await fetchFile(chunk[i]);
+          await this.ffmpeg.writeFile(fileName, imageData);
+          writtenNames.push(fileName);
+        }
+
+        let concatContent = writtenNames
+          .map((name) => `file '${name}'\nduration ${imageDuration}`)
+          .join('\n');
+        concatContent += `\nfile '${writtenNames[writtenNames.length - 1]}'`;
+        await this.ffmpeg.writeFile('concat.txt', concatContent);
+
+        const segmentName = `segment_${chunkIndex.toString().padStart(4, '0')}.mp4`;
+        const command = [
+          '-f', 'concat',
+          '-safe', '0',
+          '-i', 'concat.txt',
+          '-vf', scaleFilter,
+          '-c:v', codec,
+          '-pix_fmt', 'yuv420p',
+          '-r', settings.fps.toString(),
+          '-preset', 'ultrafast',
+          '-crf', '23',
+          '-movflags', '+faststart',
+          '-y',
+          segmentName,
+        ];
+
+        console.log(`🎬 Chunk ${chunkIndex + 1}/${totalChunks}:`, command.join(' '));
+        await this.ffmpeg.exec(command);
+        segmentNames.push(segmentName);
+
+        // Free MEMFS for this chunk's source images before loading the next
+        for (const name of writtenNames) {
+          try { await this.ffmpeg.deleteFile(name); } catch { /* ignore */ }
+        }
+        try { await this.ffmpeg.deleteFile('concat.txt'); } catch { /* ignore */ }
       }
-      const encodingTime = performance.now() - encodingStartTime;
 
-      if (onProgress) onProgress(80, 'Finalizing video...');
+      if (onProgress) onProgress(80, 'Joining segments...');
 
-      // Stage 3: Read the output and validate
-      console.log('📖 Reading output file: output.mp4');
       let videoData: Uint8Array | string;
-      try {
+
+      if (segmentNames.length === 1) {
+        videoData = await this.ffmpeg.readFile(segmentNames[0]);
+      } else {
+        const segmentConcat = segmentNames.map((name) => `file '${name}'`).join('\n');
+        await this.ffmpeg.writeFile('segments.txt', segmentConcat);
+        await this.ffmpeg.exec([
+          '-f', 'concat',
+          '-safe', '0',
+          '-i', 'segments.txt',
+          '-c', 'copy',
+          '-movflags', '+faststart',
+          '-y',
+          'output.mp4',
+        ]);
         videoData = await this.ffmpeg.readFile('output.mp4');
-        console.log('✅ Output file read successfully, size:', videoData instanceof Uint8Array ? videoData.length : videoData.length);
-        
-        // Log the first few bytes to see what we're getting
-        if (videoData instanceof Uint8Array) {
-          const firstBytes = Array.from(videoData.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-          console.log('🔍 First 16 bytes:', firstBytes);
-          
-          // Try to decode as text to see if it's an error message
-          try {
-            const textContent = new TextDecoder().decode(videoData.slice(0, 100));
-            if (textContent.includes('error') || textContent.includes('Error')) {
-              console.error('❌ FFmpeg output contains error:', textContent);
-              throw new Error(`FFmpeg error: ${textContent}`);
-            }
-          } catch (decodeError) {
-            // Ignore decode errors, this is normal for binary data
-          }
-        }
-      } catch (readError) {
-        console.error('❌ Failed to read output file:', readError);
-        throw readError;
+        try { await this.ffmpeg.deleteFile('segments.txt'); } catch { /* ignore */ }
+        try { await this.ffmpeg.deleteFile('output.mp4'); } catch { /* ignore */ }
       }
-      
-      // Validate video file size and content
+
+      for (const name of segmentNames) {
+        try { await this.ffmpeg.deleteFile(name); } catch { /* ignore */ }
+      }
+
+      const encodingTime = performance.now() - encodingStartTime;
+      if (onProgress) onProgress(90, 'Finalizing video...');
+
       if (videoData instanceof Uint8Array && videoData.length < 1000) {
-        console.error('❌ Generated video file is too small, likely invalid');
-        console.error('📊 File size:', videoData.length, 'bytes');
-        
-        // Try to see what's in the file
-        if (videoData.length > 0) {
-          const content = new TextDecoder().decode(videoData);
-          console.error('📄 File content:', content);
-        }
-        
         throw new Error('Generated video file is too small, FFmpeg may not have processed images correctly');
       }
-      
-      // Check if file has valid MP4 header
-      if (videoData instanceof Uint8Array) {
-        const header = new Uint8Array(videoData.slice(0, 8));
-        const headerStr = new TextDecoder().decode(header);
-        console.log('🔍 Video file header:', headerStr);
-        
-        // MP4 files should start with specific bytes
-        if (!headerStr.includes('ftyp') && !headerStr.includes('moov')) {
-          console.warn('⚠️ Video file may not have valid MP4 structure');
-        }
-      }
-      
+
       const videoBlob = new Blob([videoData as BlobPart], { type: 'video/mp4' });
-      console.log('✅ Video blob created, size:', videoBlob.size);
-      
-      // Additional validation
       if (videoBlob.size < 1000) {
-        console.error('❌ Video blob is too small, likely invalid');
         throw new Error('Generated video blob is too small, check FFmpeg processing');
       }
 
-      // Validate video can be played
       const isValidVideo = await this.validateVideoBlob(videoBlob);
       if (!isValidVideo) {
-        console.error('❌ Generated video failed validation');
         throw new Error('Generated video failed validation - may not be playable');
       }
-      
-      console.log('✅ Video validation passed');
-
-      // Additional FFmpeg-based validation
-      try {
-        const videoInfo = await this.getVideoInfo('output.mp4');
-        console.log('📊 Video info:', videoInfo);
-        
-        // Calculate expected duration based on input images and fps
-        const expectedDuration = imageFiles.length / settings.fps;
-        console.log(`⏱️ Expected duration: ${expectedDuration}s (${imageFiles.length} images at ${settings.fps} fps)`);
-        console.log(`⏱️ Actual duration: ${videoInfo.duration}s`);
-        
-        if (videoInfo.duration < 0.1) {
-          throw new Error('Video duration is too short, likely invalid');
-        }
-        
-        // More lenient frame count validation since we're using estimates
-        const expectedFrames = imageFiles.length;
-        const actualFrames = videoInfo.frameCount;
-        const frameRatio = actualFrames / expectedFrames;
-        
-        console.log(`🎬 Frame validation: ${actualFrames} actual vs ${expectedFrames} expected (ratio: ${frameRatio.toFixed(2)})`);
-        
-        // Only fail if we have significantly fewer frames than expected
-        if (frameRatio < 0.3) {
-          console.warn('⚠️ Video has fewer frames than expected, but continuing...');
-          // Don't throw error, just warn
-        }
-      } catch (infoError) {
-        console.error('❌ Video info validation failed:', infoError);
-        // Don't throw error, just log the issue
-        console.warn('⚠️ Continuing despite video info validation issues...');
-      }
-
-      if (onProgress) onProgress(90, 'Cleaning up...');
-
-      // Stage 4: Cleanup
-      await this.cleanupFiles(writtenNames, 'mp4');
 
       if (onProgress) onProgress(100, 'Complete');
 
       const totalTime = performance.now() - startTime;
-      console.log(`✅ Video generation completed in ${totalTime.toFixed(2)}ms (encoding: ${encodingTime.toFixed(2)}ms)`);
-      console.log(`📊 Performance: ${imageFiles.length} images processed at ${(imageFiles.length / (totalTime / 1000)).toFixed(2)} images/second`);
+      console.log(`✅ Chunked video generation completed in ${totalTime.toFixed(2)}ms (encoding: ${encodingTime.toFixed(2)}ms)`);
+      console.log(`📊 Performance: ${imageFiles.length} images at ${(imageFiles.length / (totalTime / 1000)).toFixed(2)} images/second`);
 
       return videoBlob;
     } catch (error) {
       const totalTime = performance.now() - startTime;
       console.error(`❌ Video generation failed after ${totalTime.toFixed(2)}ms:`, error);
-      
-      // Try to provide more helpful error information
-      if (error instanceof Error && error.message && error.message.includes('FFmpeg')) {
-        console.error('FFmpeg error details:', error);
-      }
-      
       throw error;
     }
   }

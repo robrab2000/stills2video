@@ -35,8 +35,9 @@ export class FileService {
         const imageFile: ImageFile = {
           id: generateId(),
           file,
-          // Full-res blob URL kept for encode paths; grid uses thumbnailUrl only
-          url: URL.createObjectURL(file),
+          // Keep a local File handle only — do not createObjectURL for every still
+          // (that would pin multi-GB folders into memory). Encode reads `file` on demand.
+          url: '',
           name: file.name,
           size: file.size,
           lastModified: file.lastModified,

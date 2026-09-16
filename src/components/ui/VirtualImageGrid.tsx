@@ -15,6 +15,7 @@ interface VirtualImageGridProps {
   onDrop?: (e: React.DragEvent) => void;
   onDragOver?: (e: React.DragEvent) => void;
   isGenerating?: boolean;
+  onRequestThumbnail?: (id: string) => void;
   itemHeight?: number;
   containerHeight?: number;
   overscan?: number;
@@ -40,6 +41,7 @@ export function VirtualImageGrid({
   onDrop,
   onDragOver,
   isGenerating = false,
+  onRequestThumbnail,
   itemHeight = 200,
   containerHeight = 600,
   overscan = 5,
@@ -112,6 +114,21 @@ export function VirtualImageGrid({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // Request thumbs only for currently visible virtual rows
+  useEffect(() => {
+    if (!onRequestThumbnail) return;
+    for (let row = visibleRange.start; row < visibleRange.end; row++) {
+      const item = virtualItems[row];
+      if (!item) continue;
+      for (let i = item.start; i < item.end; i++) {
+        const image = images[i];
+        if (image && !image.thumbnailUrl) {
+          onRequestThumbnail(image.id);
+        }
+      }
+    }
+  }, [visibleRange.start, visibleRange.end, virtualItems, images, onRequestThumbnail]);
 
   if (images.length === 0) return null;
 

@@ -111,10 +111,15 @@ export function VideoSettings({
     }
 
     const img = new window.Image();
+    const tempUrl = URL.createObjectURL(first.file);
     img.onload = () => {
+      URL.revokeObjectURL(tempUrl);
       applySize(img.naturalWidth, img.naturalHeight);
     };
-    img.src = first.url;
+    img.onerror = () => {
+      URL.revokeObjectURL(tempUrl);
+    };
+    img.src = tempUrl;
   }, [images, onSettingsChange]);
 
   const handlePresetChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {

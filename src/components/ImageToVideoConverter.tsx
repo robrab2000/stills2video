@@ -81,7 +81,7 @@ export function ImageToVideoConverter() {
     (isGenerating) => setUIState({ isGenerating })
   );
 
-  const shouldUseVirtualGrid = useMemo(() => images.length > 50, [images.length]);
+  const shouldUseVirtualGrid = useMemo(() => images.length > 24, [images.length]);
   const hasImages = images.length > 0;
 
   const handleGenerateVideo = useCallback(async () => {
@@ -203,6 +203,7 @@ export function ImageToVideoConverter() {
               onDrop={imageManager.handleDrop}
               onDragOver={imageManager.handleDragOver}
               isGenerating={ui.isGenerating}
+              onRequestThumbnail={imageManager.requestThumbnail}
             />
           ) : (
             <ImageGrid
@@ -224,6 +225,7 @@ export function ImageToVideoConverter() {
               onDrop={imageManager.handleDrop}
               onDragOver={imageManager.handleDragOver}
               isGenerating={ui.isGenerating}
+              onRequestThumbnail={imageManager.requestThumbnail}
             />
           )}
 

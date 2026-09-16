@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { ImageFile } from '../../types';
 
 interface ImageGridItemProps {
@@ -10,6 +10,7 @@ interface ImageGridItemProps {
   onDragStart: (index: number) => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent, index: number) => void;
+  onRequestThumbnail?: (id: string) => void;
 }
 
 export const ImageGridItem = memo(function ImageGridItem({
@@ -20,8 +21,11 @@ export const ImageGridItem = memo(function ImageGridItem({
   onRemove,
   onDragStart,
   onDragEnd,
-  onDragOver
+  onDragOver,
+  onRequestThumbnail,
 }: ImageGridItemProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+
   const handleRemove = useCallback(() => {
     onRemove(image.id);
   }, [image.id, onRemove]);
@@ -34,10 +38,31 @@ export const ImageGridItem = memo(function ImageGridItem({
     onDragOver(e, index);
   }, [index, onDragOver]);
 
+  // Only decode a preview when the tile is near the viewport
+  useEffect(() => {
+    if (image.thumbnailUrl || !onRequestThumbnail) return;
+    const node = rootRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          onRequestThumbnail(image.id);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '240px' }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [image.id, image.thumbnailUrl, onRequestThumbnail]);
+
   const previewSrc = image.thumbnailUrl;
 
   return (
     <div
+      ref={rootRef}
       draggable={sortOption === 'manual'}
       onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
@@ -60,10 +85,10 @@ export const ImageGridItem = memo(function ImageGridItem({
         ) : (
           <div
             className="flex h-full w-full animate-pulse flex-col items-center justify-center gap-1"
-            aria-label={`Loading preview for ${image.name}`}
+            aria-label={`Preview pending for ${image.name}`}
           >
             <div className="h-8 w-8 rounded-sm bg-[rgba(26,28,30,0.12)]" />
-            <span className="text-[10px] uppercase tracking-wide text-ink-faint">Loading</span>
+            <span className="text-[10px] uppercase tracking-wide text-ink-faint">Waiting</span>
           </div>
         )}
       </div>

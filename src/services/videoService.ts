@@ -307,9 +307,11 @@ export class VideoService {
           if (currentTime - lastFrameTime >= frameInterval) {
             const image = images[currentImageIndex];
             
-            // Load and draw image
+            // Load and draw image from local File handle (one at a time)
             const img = new Image();
+            const objectUrl = URL.createObjectURL(image.file);
             img.onload = () => {
+              URL.revokeObjectURL(objectUrl);
               // Clear canvas
               ctx.clearRect(0, 0, canvas.width, canvas.height);
               
@@ -337,8 +339,13 @@ export class VideoService {
               // Schedule next frame
               requestAnimationFrame(drawNextFrame);
             };
+
+            img.onerror = () => {
+              URL.revokeObjectURL(objectUrl);
+              reject(new Error(`Failed to load image: ${image.name}`));
+            };
             
-            img.src = image.url;
+            img.src = objectUrl;
           } else {
             // Schedule next frame
             requestAnimationFrame(drawNextFrame);

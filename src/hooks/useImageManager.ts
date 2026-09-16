@@ -15,6 +15,12 @@ import {
 const isDev = process.env.NODE_ENV === 'development';
 const THUMBNAIL_CONCURRENCY = 2;
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
 export function useImageManager(
   images: ImageFile[],
   sortOption: SortOption,
@@ -22,55 +28,77 @@ export function useImageManager(
 ) {
   const dispatch = useAppDispatch();
   const thumbQueueRef = useRef<Set<string>>(new Set());
+  const imagesRef = useRef(images);
+  const activeThumbPassRef = useRef(false);
+  const pendingThumbIdsRef = useRef<string[]>([]);
 
-  const enqueueThumbnails = useCallback((newImages: ImageFile[]) => {
-    const pending = newImages.filter(
-      (img) => !img.thumbnailUrl && !thumbQueueRef.current.has(img.id)
-    );
-    if (pending.length === 0) return;
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
 
-    pending.forEach((img) => thumbQueueRef.current.add(img.id));
+  const flushThumbnailQueue = useCallback(async () => {
+    if (activeThumbPassRef.current) return;
+    activeThumbPassRef.current = true;
 
-    void mapWithConcurrency(
-      pending,
-      THUMBNAIL_CONCURRENCY,
-      async (image) => {
-        try {
-          const thumb = await createImageThumbnailWithNaturalSize(image.file);
-          // Yield so the UI can paint placeholders between heavy decodes
-          await new Promise((resolve) => setTimeout(resolve, 0));
-          return { id: image.id, ...thumb };
-        } catch (error) {
-          if (isDev) {
-            console.warn('Thumbnail failed for', image.name, error);
-          }
-          return null;
-        }
-      },
-      (result) => {
-        if (!result) return;
-        dispatch({
-          type: 'UPDATE_IMAGE_METADATA',
-          payload: {
-            id: result.id,
-            metadata: {
-              thumbnailUrl: result.thumbnailUrl,
-              width: result.width,
-              height: result.height,
-            },
+    try {
+      while (pendingThumbIdsRef.current.length > 0) {
+        const batchIds = pendingThumbIdsRef.current.splice(0, 8);
+        const batch = batchIds
+          .map((id) => imagesRef.current.find((img) => img.id === id))
+          .filter((img): img is ImageFile => img != null && !img.thumbnailUrl);
+
+        if (batch.length === 0) continue;
+
+        await mapWithConcurrency(
+          batch,
+          THUMBNAIL_CONCURRENCY,
+          async (image) => {
+            try {
+              const thumb = await createImageThumbnailWithNaturalSize(image.file);
+              await new Promise((resolve) => setTimeout(resolve, 0));
+              return { id: image.id, ...thumb };
+            } catch (error) {
+              if (isDev) {
+                console.warn('Thumbnail failed for', image.name, error);
+              }
+              thumbQueueRef.current.delete(image.id);
+              return null;
+            }
           },
-        });
-        thumbQueueRef.current.delete(result.id);
+          (result) => {
+            if (!result) return;
+            dispatch({
+              type: 'UPDATE_IMAGE_METADATA',
+              payload: {
+                id: result.id,
+                metadata: {
+                  thumbnailUrl: result.thumbnailUrl,
+                  width: result.width,
+                  height: result.height,
+                },
+              },
+            });
+            thumbQueueRef.current.delete(result.id);
+          }
+        );
       }
-    ).then(() => {
-      pending.forEach((img) => thumbQueueRef.current.delete(img.id));
-    });
+    } finally {
+      activeThumbPassRef.current = false;
+      if (pendingThumbIdsRef.current.length > 0) {
+        void flushThumbnailQueue();
+      }
+    }
   }, [dispatch]);
 
-  // Catch any images missing thumbs (e.g. restored state)
-  useEffect(() => {
-    enqueueThumbnails(images);
-  }, [images, enqueueThumbnails]);
+  const requestThumbnail = useCallback((id: string) => {
+    const image = imagesRef.current.find((img) => img.id === id);
+    if (!image || image.thumbnailUrl || thumbQueueRef.current.has(id)) {
+      return;
+    }
+    thumbQueueRef.current.add(id);
+    pendingThumbIdsRef.current.push(id);
+    void flushThumbnailQueue();
+  }, [flushThumbnailQueue]);
 
   const handleFileSelect = useCallback((files: FileList | File[]) => {
     try {
@@ -82,8 +110,10 @@ export function useImageManager(
 
       if (result.images.length > 0) {
         dispatch({ type: 'ADD_IMAGES', payload: result.images });
-        toast.success(`Added ${result.images.length} images`);
-        enqueueThumbnails(result.images);
+        const totalBytes = result.images.reduce((sum, img) => sum + img.size, 0);
+        toast.success(`Added ${result.images.length} images (${formatBytes(totalBytes)})`, {
+          description: 'Files stay on your device. Previews load as you scroll.',
+        });
       } else if (result.errors.length === 0) {
         toast.error('No images found');
       }
@@ -100,7 +130,7 @@ export function useImageManager(
       console.error('Error in handleFileSelect:', error);
       toast.error('Failed to process images');
     }
-  }, [dispatch, enqueueThumbnails]);
+  }, [dispatch]);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
@@ -169,5 +199,6 @@ export function useImageManager(
     handleClearAllImages,
     handleSortOptionChange,
     handleDragOverItem,
+    requestThumbnail,
   };
 }

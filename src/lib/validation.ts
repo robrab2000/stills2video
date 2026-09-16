@@ -40,7 +40,8 @@ export const imageFileSchema = z.object({
       lastModified: z.number(),
     })
   ]),
-  url: z.string().url(),
+  url: z.union([z.literal(''), z.string().url()]),
+  thumbnailUrl: z.string().url().optional(),
   name: z.string().max(255, 'File name too long'),
   size: z.number().positive(),
   lastModified: z.number(),

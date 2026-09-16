@@ -16,6 +16,7 @@ interface ImageGridProps {
   onDrop?: (e: React.DragEvent) => void;
   onDragOver?: (e: React.DragEvent) => void;
   isGenerating?: boolean;
+  onRequestThumbnail?: (id: string) => void;
 }
 
 export function ImageGrid({
@@ -31,6 +32,7 @@ export function ImageGrid({
   onDrop,
   onDragOver,
   isGenerating = false,
+  onRequestThumbnail,
 }: ImageGridProps) {
   const handleClearAll = useCallback(() => {
     onClearAll();
@@ -64,19 +66,20 @@ export function ImageGrid({
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
-        {images.map((image, index) => (
-          <ImageGridItem
-            key={image.id}
-            image={image}
-            index={index}
-            sortOption={sortOption}
-            isDragged={draggedIndex === index}
-            onRemove={onRemoveImage}
-            onDragStart={onDragStart}
-            onDragEnd={handleDragEnd}
-            onDragOver={onDragOverItem}
-          />
-        ))}
+            {images.map((image, index) => (
+              <ImageGridItem
+                key={image.id}
+                image={image}
+                index={index}
+                sortOption={sortOption}
+                isDragged={draggedIndex === index}
+                onRemove={onRemoveImage}
+                onDragStart={onDragStart}
+                onDragEnd={handleDragEnd}
+                onDragOver={onDragOverItem}
+                onRequestThumbnail={onRequestThumbnail}
+              />
+            ))}
       </div>
 
       {onFilesSelected && onDrop && onDragOver && (
