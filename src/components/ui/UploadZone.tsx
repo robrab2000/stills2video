@@ -94,7 +94,7 @@ export function UploadZone({
     <div
       role="button"
       tabIndex={disabled ? -1 : 0}
-      aria-label="Drop images here or browse files"
+      aria-label="Drop images or folders here, or browse files"
       aria-disabled={disabled}
       className={`text-center transition-all duration-200 outline-none ${
         compact ? 'rounded-lg border border-dashed p-4' : 'rounded-xl border-2 border-dashed p-10 md:p-14'
@@ -117,10 +117,10 @@ export function UploadZone({
         <UploadIcon active={isDragOver} />
         <div>
           <p className={`font-display font-semibold text-ink ${compact ? 'text-base' : 'text-xl'}`}>
-            {isDragOver ? 'Release to add stills' : 'Drop images here'}
+            {isDragOver ? 'Release to add stills' : 'Drop images or a folder'}
           </p>
           <p className="mt-1 text-sm text-ink-muted">
-            {isDragOver ? 'Images stay on your device' : 'or click to browse — JPG, PNG, WebP, and more'}
+            {isDragOver ? 'Folders are scanned for images' : 'or click to browse — JPG, PNG, WebP, and more'}
           </p>
         </div>
         <button

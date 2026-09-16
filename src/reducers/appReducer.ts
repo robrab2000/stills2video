@@ -77,11 +77,23 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       case 'UPDATE_IMAGE_METADATA':
         return {
           ...state,
-          images: state.images.map(img => 
-            img.id === action.payload.id 
-              ? { ...img, ...action.payload.metadata }
-              : img
-          )
+          images: state.images.map(img => {
+            if (img.id !== action.payload.id) return img;
+            const next = { ...img, ...action.payload.metadata };
+            // Revoke previous thumbnail if replaced
+            if (
+              action.payload.metadata.thumbnailUrl &&
+              img.thumbnailUrl &&
+              img.thumbnailUrl !== action.payload.metadata.thumbnailUrl
+            ) {
+              try {
+                URL.revokeObjectURL(img.thumbnailUrl);
+              } catch {
+                // ignore
+              }
+            }
+            return next;
+          })
         };
 
       // Video management

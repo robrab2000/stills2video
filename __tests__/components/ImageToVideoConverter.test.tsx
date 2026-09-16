@@ -121,7 +121,7 @@ describe('ImageToVideoConverter', () => {
 
     expect(screen.getByRole('heading', { name: 'Stills-2-Video' })).toBeInTheDocument();
     expect(screen.getByText('Drop stills. Export video. All in your browser.')).toBeInTheDocument();
-    expect(screen.getByText(/Nothing is uploaded/i)).toBeInTheDocument();
+    expect(screen.getByText(/Encoding happens in your browser/i)).toBeInTheDocument();
   });
 
   test('hides sequence and export panels until images are added', () => {

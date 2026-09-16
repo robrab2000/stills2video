@@ -170,15 +170,22 @@ export function VirtualImageGrid({
                         sortOption === 'manual' ? 'cursor-move' : ''
                       } ${draggedIndex === globalIndex ? 'opacity-50' : ''}`}
                     >
-                      <div className="aspect-square">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={image.url}
-                          alt={image.name}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      </div>
+                        <div className="aspect-square bg-[rgba(26,28,30,0.06)]">
+                          {image.thumbnailUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={image.thumbnailUrl}
+                              alt={image.name}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                              decoding="async"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full animate-pulse items-center justify-center">
+                              <span className="text-[10px] uppercase tracking-wide text-ink-faint">Loading</span>
+                            </div>
+                          )}
+                        </div>
 
                       <div className="absolute left-2 top-2 rounded bg-ink/80 px-2 py-0.5 text-xs font-medium text-white">
                         {globalIndex + 1}

@@ -1,5 +1,5 @@
 import { ImageFile, VideoPreview, VideoSettings } from '../types';
-import { validateImageFile, validateImageCollection, validateFileUpload } from '../lib/validation';
+import { validateImageFile, validateImageCollection } from '../lib/validation';
 import { formatFileSize, formatTimestamp, generateId, getFileExtension, removeFileExtension } from '../lib/uiUtils';
 import { estimateVideoSize, calculateVideoDuration } from '../lib/videoUtils';
 
@@ -19,29 +19,28 @@ export class FileService {
     };
   }
 
-  static processFileList(files: FileList): { images: ImageFile[]; errors: string[] } {
+  static processFileList(files: FileList | File[]): { images: ImageFile[]; errors: string[] } {
     const images: ImageFile[] = [];
     const errors: string[] = [];
+    const fileArray = Array.from(files as ArrayLike<File>);
 
-    // Validate the entire file list first
-    const uploadValidation = validateFileUpload(files);
-    if (!uploadValidation.isValid) {
-      errors.push(...uploadValidation.errors);
+    if (fileArray.length === 0) {
+      return { images, errors: ['No files selected'] };
     }
 
-    // Process each file
-    Array.from(files).forEach((file) => {
+    fileArray.forEach((file) => {
       const validation = this.validateImageFile(file);
-      
+
       if (validation.isValid) {
         const imageFile: ImageFile = {
           id: generateId(),
           file,
+          // Full-res blob URL kept for encode paths; grid uses thumbnailUrl only
           url: URL.createObjectURL(file),
           name: file.name,
           size: file.size,
           lastModified: file.lastModified,
-          type: file.type
+          type: file.type || 'image/jpeg',
         };
         images.push(imageFile);
       } else {

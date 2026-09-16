@@ -362,16 +362,19 @@ export function validateImageFile(file: File): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // File type validation
-  if (!file.type.startsWith('image/')) {
+  const looksLikeImage =
+    file.type.startsWith('image/') ||
+    /\.(jpe?g|png|gif|webp|bmp|avif|tiff?)$/i.test(file.name);
+
+  if (!looksLikeImage) {
     errors.push('File must be an image');
   }
 
   // File size validation
-  const maxSize = 50 * 1024 * 1024; // 50MB
+  const maxSize = 100 * 1024 * 1024; // 100MB — large stills are common for sequences
   if (file.size > maxSize) {
-    errors.push('File size must be less than 50MB');
-  } else if (file.size > 10 * 1024 * 1024) { // 10MB
+    errors.push('File size must be less than 100MB');
+  } else if (file.size > 20 * 1024 * 1024) {
     warnings.push('Large file size may slow down processing');
   }
 

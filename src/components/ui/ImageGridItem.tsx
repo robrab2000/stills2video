@@ -34,6 +34,8 @@ export const ImageGridItem = memo(function ImageGridItem({
     onDragOver(e, index);
   }, [index, onDragOver]);
 
+  const previewSrc = image.thumbnailUrl;
+
   return (
     <div
       draggable={sortOption === 'manual'}
@@ -45,14 +47,25 @@ export const ImageGridItem = memo(function ImageGridItem({
       } ${isDragged ? 'opacity-50' : ''} hover:border-ink-muted`}
       style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}
     >
-      <div className="aspect-square">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={image.url}
-          alt={image.name}
-          className="h-full w-full object-cover"
-          loading="lazy"
-        />
+      <div className="aspect-square bg-[rgba(26,28,30,0.06)]">
+        {previewSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={previewSrc}
+            alt={image.name}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          <div
+            className="flex h-full w-full animate-pulse flex-col items-center justify-center gap-1"
+            aria-label={`Loading preview for ${image.name}`}
+          >
+            <div className="h-8 w-8 rounded-sm bg-[rgba(26,28,30,0.12)]" />
+            <span className="text-[10px] uppercase tracking-wide text-ink-faint">Loading</span>
+          </div>
+        )}
       </div>
 
       <div className="absolute left-2 top-2 rounded bg-ink/80 px-2 py-0.5 text-xs font-medium text-white">

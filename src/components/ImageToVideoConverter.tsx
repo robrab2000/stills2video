@@ -20,20 +20,6 @@ import { shouldEnableFFmpegMultithreading, isMultithreadingAvailable } from '../
 
 const isDev = process.env.NODE_ENV === 'development';
 
-function loadImageDimensions(
-  images: { id: string; url: string; width?: number; height?: number }[],
-  update: (id: string, width: number, height: number) => void
-) {
-  images.forEach((image) => {
-    if (image.width && image.height) return;
-    const img = new window.Image();
-    img.onload = () => {
-      update(image.id, img.naturalWidth, img.naturalHeight);
-    };
-    img.src = image.url;
-  });
-}
-
 export function ImageToVideoConverter() {
   const [state, dispatch] = useApp();
   const [sortOption, setSortOption] = useState<SortOption>("manual");
@@ -57,15 +43,6 @@ export function ImageToVideoConverter() {
       updateSettings({ selectedCodec });
     }
   }, [selectedCodec, settings.selectedCodec, updateSettings]);
-
-  useEffect(() => {
-    loadImageDimensions(images, (id, width, height) => {
-      dispatch({
-        type: 'UPDATE_IMAGE_METADATA',
-        payload: { id, metadata: { width, height } },
-      });
-    });
-  }, [images, dispatch]);
 
   // Pre-init FFmpeg worker quietly (dev status only via PerformanceMonitor)
   useEffect(() => {
@@ -191,26 +168,18 @@ export function ImageToVideoConverter() {
     <div className="space-y-8">
       {hasImages ? (
         <>
-          <header className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Image
-                src="/logo-mark.png"
-                alt=""
-                width={40}
-                height={27}
-                className="h-8 w-auto"
-                priority
-              />
-              <div>
-                <h1 className="font-display text-xl font-semibold tracking-tight text-ink md:text-2xl">
-                  Stills-2-Video
-                </h1>
-              </div>
-            </div>
-            <span className="chip">
-              <span className="chip-dot" aria-hidden="true" />
-              Runs locally
-            </span>
+          <header className="flex flex-wrap items-center gap-3">
+            <Image
+              src="/logo-mark.png"
+              alt=""
+              width={40}
+              height={27}
+              className="h-8 w-auto"
+              priority
+            />
+            <h1 className="font-display text-xl font-semibold tracking-tight text-ink md:text-2xl">
+              Stills-2-Video
+            </h1>
           </header>
 
           {shouldUseVirtualGrid ? (
@@ -295,7 +264,7 @@ export function ImageToVideoConverter() {
             Drop stills. Export video. All in your browser.
           </p>
           <p className="mt-2 text-sm text-ink-faint">
-            Nothing is uploaded — encoding stays on your device.
+            Encoding happens in your browser — nothing is uploaded.
           </p>
 
           <div className="mt-10 w-full">

@@ -2,6 +2,7 @@ export interface ImageFile {
   id: string;
   file: File;
   url: string;
+  thumbnailUrl?: string;
   name: string;
   size: number;
   lastModified: number;
