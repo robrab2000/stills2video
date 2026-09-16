@@ -202,12 +202,11 @@ export function validateVideoGenerationWithZod(
       errors.push('Duplicate image IDs detected');
     }
 
-    // Check total file size
+    // Soft size guidance only — this is client-side, so hard caps just block legitimate sequences
     const totalSize = imagesArray.reduce((sum, img) => sum + img.size, 0);
-    const maxTotalSize = 500 * 1024 * 1024; // 500MB
-    if (totalSize > maxTotalSize) {
-      errors.push('Total file size must be less than 500MB');
-    } else if (totalSize > 100 * 1024 * 1024) { // 100MB
+    if (totalSize > 500 * 1024 * 1024) {
+      warnings.push('Large total size may use a lot of memory and take longer to encode');
+    } else if (totalSize > 100 * 1024 * 1024) {
       warnings.push('Large total size may affect performance');
     }
 
@@ -291,12 +290,13 @@ export function validateFileUploadWithZod(files: unknown): ValidationResult {
           continue;
         }
 
-        // Validate file size
-        const maxSize = 50 * 1024 * 1024; // 50MB
-        if (file.size > maxSize) {
-          errors.push(`File "${file.name}": Size must be less than 50MB`);
+        // Validate file size — soft warn; only hard-block extreme single files
+        const softWarnSize = 50 * 1024 * 1024;
+        const hardMaxSize = 500 * 1024 * 1024;
+        if (file.size > hardMaxSize) {
+          errors.push(`File "${file.name}": Size must be less than 500MB`);
           continue;
-        } else if (file.size > 10 * 1024 * 1024) { // 10MB
+        } else if (file.size > softWarnSize) {
           warnings.push(`File "${file.name}": Large file size may slow down processing`);
         }
 
@@ -370,11 +370,12 @@ export function validateImageFile(file: File): ValidationResult {
     errors.push('File must be an image');
   }
 
-  // File size validation
-  const maxSize = 100 * 1024 * 1024; // 100MB — large stills are common for sequences
-  if (file.size > maxSize) {
-    errors.push('File size must be less than 100MB');
-  } else if (file.size > 20 * 1024 * 1024) {
+  // File size guidance — allow large camera stills; warn instead of blocking
+  const softWarnSize = 50 * 1024 * 1024; // 50MB
+  const hardMaxSize = 500 * 1024 * 1024; // 500MB per file
+  if (file.size > hardMaxSize) {
+    errors.push('File size must be less than 500MB');
+  } else if (file.size > softWarnSize) {
     warnings.push('Large file size may slow down processing');
   }
 
@@ -406,12 +407,11 @@ export function validateImageCollection(images: ImageFile[]): ValidationResult {
     warnings.push('Large image sequence may take longer to process');
   }
 
-  // Size validation
+  // Soft size guidance only — processing stays in the browser
   const totalSize = images.reduce((sum, img) => sum + img.size, 0);
-  const maxTotalSize = 500 * 1024 * 1024; // 500MB
-  if (totalSize > maxTotalSize) {
-    errors.push('Total file size must be less than 500MB');
-  } else if (totalSize > 100 * 1024 * 1024) { // 100MB
+  if (totalSize > 500 * 1024 * 1024) {
+    warnings.push('Large total size may use a lot of memory and take longer to encode');
+  } else if (totalSize > 100 * 1024 * 1024) {
     warnings.push('Large total size may affect performance');
   }
 
