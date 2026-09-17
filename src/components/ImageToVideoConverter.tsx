@@ -22,7 +22,7 @@ const isDev = process.env.NODE_ENV === 'development';
 
 export function ImageToVideoConverter() {
   const [state, dispatch] = useApp();
-  const [sortOption, setSortOption] = useState<SortOption>("manual");
+  const [sortOption, setSortOption] = useState<SortOption>("name");
 
   const { images, removeImage, clearAllImages, reorderImages } = useImages();
   const { videos, addVideo, removeVideo, clearAllVideos } = useVideos();

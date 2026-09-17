@@ -6,6 +6,7 @@ import { useAppDispatch } from '../contexts/AppContext';
 import {
   collectImageFilesFromDataTransfer,
   filesToFileList,
+  sortFilesForSequence,
 } from '../lib/folderDrop';
 import {
   createImageThumbnailWithNaturalSize,
@@ -102,17 +103,39 @@ export function useImageManager(
 
   const handleFileSelect = useCallback((files: FileList | File[]) => {
     try {
-      const list = Array.isArray(files) ? filesToFileList(files) : files;
+      const raw = Array.isArray(files) ? files : Array.from(files);
+      // Browse / drop both get natural sequence order (img2 before img10)
+      const ordered = sortFilesForSequence(raw);
+      const list = filesToFileList(ordered);
       if (isDev) {
         console.log('handleFileSelect called with', list.length, 'files');
+        console.log(
+          'sequence sample:',
+          ordered.slice(0, 3).map((f) => f.name),
+          '…',
+          ordered.slice(-2).map((f) => f.name)
+        );
       }
       const result = FileService.processFileList(list);
 
       if (result.images.length > 0) {
+        const wasEmpty = imagesRef.current.length === 0;
         dispatch({ type: 'ADD_IMAGES', payload: result.images });
+
+        // Fresh imports default to natural filename order (critical for folder drops).
+        // If the user already drag-reordered, keep manual order for the new append.
+        if (wasEmpty || sortOption === 'name') {
+          onSortOptionChange('name');
+          dispatch({ type: 'SORT_IMAGES', payload: 'name' });
+        } else if (sortOption !== 'manual') {
+          dispatch({ type: 'SORT_IMAGES', payload: sortOption });
+        }
+
         const totalBytes = result.images.reduce((sum, img) => sum + img.size, 0);
         toast.success(`Added ${result.images.length} images (${formatBytes(totalBytes)})`, {
-          description: 'Files stay on your device. Previews load as you scroll.',
+          description: wasEmpty || sortOption === 'name'
+            ? 'Ordered by filename. Previews load as you scroll.'
+            : 'Files stay on your device. Previews load as you scroll.',
         });
       } else if (result.errors.length === 0) {
         toast.error('No images found');
@@ -130,7 +153,7 @@ export function useImageManager(
       console.error('Error in handleFileSelect:', error);
       toast.error('Failed to process images');
     }
-  }, [dispatch]);
+  }, [dispatch, onSortOptionChange, sortOption]);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();

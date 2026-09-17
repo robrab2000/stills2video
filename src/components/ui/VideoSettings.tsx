@@ -185,7 +185,7 @@ export function VideoSettings({
             className="field-control"
           >
             <option value="manual">Manual (drag)</option>
-            <option value="name">Alphabetical</option>
+            <option value="name">Alphabetical (natural)</option>
             <option value="date">Date modified</option>
             <option value="size">File size</option>
           </select>

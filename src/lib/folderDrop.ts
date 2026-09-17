@@ -10,6 +10,21 @@ export function isLikelyImageFile(file: File): boolean {
   return IMAGE_EXTENSION.test(file.name);
 }
 
+/** Natural compare so frame_2 comes before frame_10 */
+export function naturalCompare(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function fileSortKey(file: File): string {
+  const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+  return relative && relative.length > 0 ? relative : file.name;
+}
+
+/** Stable sequence order for dropped folders / multi-select */
+export function sortFilesForSequence(files: File[]): File[] {
+  return [...files].sort((a, b) => naturalCompare(fileSortKey(a), fileSortKey(b)));
+}
+
 function readAllDirectoryEntries(
   reader: FileSystemDirectoryReader
 ): Promise<FileSystemEntry[]> {
@@ -40,10 +55,24 @@ function readFileEntry(entry: FileSystemFileEntry): Promise<File> {
   });
 }
 
-async function traverseEntry(entry: FileSystemEntry, out: File[]): Promise<void> {
+async function traverseEntry(
+  entry: FileSystemEntry,
+  out: File[],
+  pathPrefix = ''
+): Promise<void> {
   if (entry.isFile) {
     const file = await readFileEntry(entry as FileSystemFileEntry);
     if (isLikelyImageFile(file)) {
+      // Preserve folder-relative path for sorting when the browser omits webkitRelativePath
+      const relativePath = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
+      try {
+        Object.defineProperty(file, 'webkitRelativePath', {
+          value: relativePath,
+          configurable: true,
+        });
+      } catch {
+        // Some browsers make this non-configurable; name-only sort still works
+      }
       out.push(file);
     }
     return;
@@ -52,8 +81,10 @@ async function traverseEntry(entry: FileSystemEntry, out: File[]): Promise<void>
   if (entry.isDirectory) {
     const reader = (entry as FileSystemDirectoryEntry).createReader();
     const children = await readAllDirectoryEntries(reader);
+    children.sort((a, b) => naturalCompare(a.name, b.name));
+    const nextPrefix = pathPrefix ? `${pathPrefix}/${entry.name}` : entry.name;
     for (const child of children) {
-      await traverseEntry(child, out);
+      await traverseEntry(child, out, nextPrefix);
     }
   }
 }
@@ -68,15 +99,18 @@ export async function collectImageFilesFromDataTransfer(
 
   if (entries.length > 0) {
     const files: File[] = [];
-    for (const entry of entries) {
+    const roots = [...entries].sort((a, b) => naturalCompare(a.name, b.name));
+    for (const entry of roots) {
       await traverseEntry(entry, files);
     }
     if (files.length > 0) {
-      return files;
+      return sortFilesForSequence(files);
     }
   }
 
-  return Array.from(dataTransfer.files ?? []).filter(isLikelyImageFile);
+  return sortFilesForSequence(
+    Array.from(dataTransfer.files ?? []).filter(isLikelyImageFile)
+  );
 }
 
 export function filesToFileList(files: File[]): FileList {

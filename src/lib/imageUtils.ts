@@ -1,3 +1,5 @@
+import { naturalCompare } from './folderDrop';
+
 export interface ImageFile {
   id: string;
   file: File;
@@ -48,7 +50,7 @@ export function sortImages(images: ImageFile[], option: SortOption): ImageFile[]
   const sorted = [...images];
   switch (option) {
     case "name":
-      sorted.sort((a, b) => a.name.localeCompare(b.name));
+      sorted.sort((a, b) => naturalCompare(a.name, b.name));
       break;
     case "date":
       sorted.sort((a, b) => a.lastModified - b.lastModified);
